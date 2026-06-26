@@ -129,3 +129,5 @@ MIT License (or your preferred license)
 ## Authors
 
 Built with passion for advancing AI technology.
+
+still error btw and stil in progress awdawdadwadawdadadw
