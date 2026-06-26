@@ -1,0 +1,173 @@
+# Expera AI Training Configuration
+# This file defines training hyperparameters and strategies
+
+training:
+  # Experiment tracking
+  experiment_name: "expera-ai-base-v1"
+  run_name: "run_001"
+  seed: 42
+  
+  # Output directories
+  output_dir: "./checkpoints"
+  logging_dir: "./logs"
+  
+  # Training strategy
+  strategy:
+    # Distributed training
+    distributed: false
+    num_gpus: 1
+    use_ddp: false  # Distributed Data Parallel
+    use_fsdp: false  # Fully Sharded Data Parallel
+    
+    # Mixed precision
+    mixed_precision: true
+    fp16: false
+    bf16: true  # Preferred over fp16 if available
+    
+    # Gradient accumulation
+    gradient_accumulation_steps: 4
+    
+    # Gradient clipping
+    max_grad_norm: 1.0
+    
+  # Optimization
+  optimizer:
+    name: "adamw"  # Options: adamw, adam, sgd, adafactor
+    learning_rate: 3.0e-4
+    weight_decay: 0.01
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    
+  # Learning rate schedule
+  scheduler:
+    name: "cosine_with_warmup"  # Options: cosine_with_warmup, linear, constant, polynomial
+    warmup_steps: 2000
+    warmup_ratio: 0.05  # Alternative to warmup_steps
+    num_training_steps: 100000
+    min_lr_ratio: 0.1  # Minimum LR as ratio of initial LR
+    
+  # Batch configuration
+  batch:
+    per_device_train_batch_size: 8
+    per_device_eval_batch_size: 16
+    max_seq_length: 2048
+    
+  # Training duration
+  duration:
+    num_train_epochs: 3
+    max_steps: -1  # -1 means use num_train_epochs
+    
+  # Evaluation
+  evaluation:
+    eval_strategy: "steps"  # Options: steps, epoch, no
+    eval_steps: 1000
+    eval_accumulation_steps: 1
+    
+  # Checkpointing
+  checkpointing:
+    save_strategy: "steps"  # Options: steps, epoch, no
+    save_steps: 5000
+    save_total_limit: 5  # Keep only last N checkpoints
+    load_best_model_at_end: true
+    metric_for_best_model: "eval_loss"
+    greater_is_better: false
+    
+  # Logging
+  logging:
+    logging_strategy: "steps"
+    logging_steps: 100
+    logging_first_step: true
+    report_to: ["tensorboard", "wandb"]  # Options: tensorboard, wandb, none
+    
+  # Data loading
+  dataloader:
+    num_workers: 4
+    pin_memory: true
+    prefetch_factor: 2
+    persistent_workers: true
+    
+  # Regularization
+  regularization:
+    dropout: 0.1
+    attention_dropout: 0.1
+    label_smoothing: 0.0
+    
+  # Advanced training techniques
+  advanced:
+    # Curriculum learning
+    use_curriculum: false
+    curriculum_steps: [10000, 30000, 50000]
+    curriculum_seq_lengths: [512, 1024, 2048]
+    
+    # Dynamic loss scaling
+    use_dynamic_loss_scaling: true
+    
+    # Gradient checkpointing (memory efficient)
+    gradient_checkpointing: true
+    
+    # Compile model (PyTorch 2.0+)
+    compile_model: false
+    compile_mode: "default"  # Options: default, reduce-overhead, max-autotune
+    
+  # Debugging
+  debug:
+    detect_anomaly: false
+    profile: false
+    overfit_batches: 0  # Set > 0 to overfit on N batches for debugging
+
+# Dataset configuration
+dataset:
+  # Training data
+  train_data:
+    path: "./data/processed/train"
+    format: "jsonl"  # Options: jsonl, parquet, arrow
+    streaming: false
+    
+  # Validation data
+  eval_data:
+    path: "./data/processed/eval"
+    format: "jsonl"
+    streaming: false
+    
+  # Data preprocessing
+  preprocessing:
+    num_proc: 8
+    cache_dir: "./data/cache"
+    
+  # Data mixture (for multi-dataset training)
+  mixture:
+    code:
+      weight: 0.5
+      sources:
+        - "github_code"
+        - "stack_overflow"
+    text:
+      weight: 0.3
+      sources:
+        - "books"
+        - "articles"
+    instruction:
+      weight: 0.2
+      sources:
+        - "instruction_tuning"
+
+# Weights & Biases configuration
+wandb:
+  project: "expera-ai"
+  entity: null  # Your W&B username or team
+  tags: ["transformer", "llm", "from-scratch"]
+  notes: "Training Expera AI from scratch"
+  
+# Hardware optimization
+hardware:
+  # CPU settings
+  num_threads: 8
+  
+  # GPU settings
+  cuda_visible_devices: "0"
+  cudnn_benchmark: true
+  cudnn_deterministic: false
+  
+  # Memory management
+  empty_cache_steps: 1000
+  max_memory_allocated: null  # In GB, null for no limit
