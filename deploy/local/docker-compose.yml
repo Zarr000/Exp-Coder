@@ -1,0 +1,36 @@
+# Expera AI Local Docker Compose
+version: "3.8"
+
+services:
+  expera-api:
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile
+    image: expera-ai:latest
+    container_name: expera-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../checkpoints:/app/checkpoints
+      - ../../tokenizer:/app/tokenizer
+    environment:
+      - MODEL_PATH=/app/checkpoints/expera_coder_120m
+      - DEVICE=cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: GPU monitoring
+  nvidia-driver:
+    image: nvidia/container-toolkit:latest
+    runtime: nvidia

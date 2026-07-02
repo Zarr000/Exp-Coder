@@ -1,0 +1,74 @@
+# Expera Coder 1B Model Configuration
+# Mid-size model for complex code generation and reasoning
+
+model:
+  name: expera-coder-1b
+  path: checkpoints/expera_coder_1b
+  tokenizer: tokenizer/expera-coder
+  type: causal-lm
+
+architecture:
+  model_type: gpt
+  vocab_size: 32000
+  hidden_size: 2048
+  num_hidden_layers: 24
+  num_attention_heads: 16
+  intermediate_size: 8192
+  max_position_embeddings: 4096
+
+performance:
+  parameters: 1_000_000_000
+  parameters_estimated: 1B
+  size_mb: 2048
+  precision: fp16
+  context_length: 4096
+
+inference:
+  max_batch_size: 2
+  max_tokens: 4096
+  default_tokens: 2048
+  recommended_temperature: 0.7
+  recommended_top_p: 0.9
+  recommended_top_k: 40
+
+hardware:
+  min_gpu_memory_mb: 4096
+  recommended_gpu_memory_mb: 6144
+  supports_quantization: true
+  quantizations:
+    - fp16
+    - q4
+    - q5
+    - q8
+  supports_cpu: false
+
+capabilities:
+  code_generation: true
+  chat: true
+  infill: true
+  reasoning: true
+  completion: true
+  long_context: false
+
+use_cases:
+  - Complex code generation
+  - Full file completions
+  - Multi-language code
+  - Advanced reasoning
+  - Code refactoring
+  - Development servers
+
+deployment:
+  local: false
+  vps: true
+  cloud: true
+  edge: false
+
+# Default inference parameters
+generate:
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 40
+  repeat_penalty: 1.1
+  presence_penalty: 0.0
+  frequency_penalty: 0.0

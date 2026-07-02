@@ -1,0 +1,10 @@
+checkpoints/
+release/
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+*.gguf
+*.exl2
+data/cache/

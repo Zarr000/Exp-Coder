@@ -1,0 +1,83 @@
+# Docker Compose for Expera AI
+# Local inference, VPS deployment, or hybrid mode
+
+version: "3.8"
+
+services:
+  # Local inference mode
+  expera-local:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEPLOY: local
+    image: expera-ai:local
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./checkpoints:/app/checkpoints
+      - ./data:/app/data
+    environment:
+      - MODEL_PATH=/app/checkpoints/final/
+      - DEVICE=cpu
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # GPU inference mode
+  expera-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEPLOY: gpu
+    image: expera-ai:gpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./checkpoints:/app/checkpoints
+    environment:
+      - MODEL_PATH=/app/checkpoints/final/
+      - DEVICE=cuda
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          # Use NVIDIA GPU
+          # capabilities: [gpu]
+    # Uncomment for GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+
+  # VPS production mode
+  expera-vps:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEPLOY: vps
+    image: expera-ai:vps
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=/app/checkpoints/final/
+      - DEVICE=cpu
+      - WORKERS=4
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+# Usage:
+# Local:    docker-compose up expera-local
+# GPU:     docker-compose up expera-gpu
+# VPS:     docker-compose up expera-vps
+# Daemon:  docker-compose up -d expera-local

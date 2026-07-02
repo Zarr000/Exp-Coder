@@ -1,0 +1,13 @@
+# Kubernetes ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: expera-config
+  namespace: expera-ai
+data:
+  MODEL_NAME: "expera-coder-350m"
+  CONTEXT_LENGTH: "2048"
+  MAX_TOKENS: "1024"
+  TEMPERATURE: "0.7"
+  API_PORT: "8000"
+  LOG_LEVEL: "info"

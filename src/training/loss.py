@@ -6,6 +6,7 @@ Implements:
 2. Optional auxiliary losses for memory and reasoning modules
 """
 
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

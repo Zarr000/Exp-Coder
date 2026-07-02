@@ -1,0 +1,101 @@
+# Expera 1B Model Configuration
+# Mid-size model for complex code generation
+
+model:
+  name: expera-1b
+  version: "1.0"
+
+architecture:
+  model_type: causal_lm
+  architecture: gpt
+
+  vocab_size: 32000
+  tie_word_embeddings: false
+
+  embedding_dim: 2048
+
+  num_layers: 24
+  num_heads: 16
+  kv_heads: 16
+
+  hidden_dim: 8192
+
+  max_position_embeddings: 4096
+
+  rms_norm_eps: 1.0e-5
+  norm_first: false
+
+  activation: gelu
+
+  attention_dropout: 0.0
+  hidden_dropout: 0.0
+
+  initializer_range: 0.02
+
+rope:
+  enabled: true
+  type: yarn
+  scaling: 2.0
+  original_max_pos_embeddings: 2048
+
+attention:
+  type: flash
+  bias: false
+
+moe:
+  enabled: false
+  num_experts: 8
+  top_k: 2
+
+training:
+  optimizer: adamw
+  learning_rate: 5.0e-5
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1.0e-8
+
+  scheduler: cosine
+  warmup_steps: 1500
+  min_lr_ratio: 0.1
+
+  batch_size: 128
+  gradient_accumulation: 4
+  max_seq_length: 4096
+
+  precision: bf16
+
+  clip_grad_value: 1.0
+
+inference:
+  batch_size: 2
+  max_tokens: 4096
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 40
+
+quantization:
+  bits: 16
+  method: default
+
+hardware:
+  gpu_memory_min_gb: 8
+  gpu_memory_recommended_gb: 16
+
+  inference_batch_size: 2
+  max_batch_size: 4
+
+  supports_cpu: false
+  cpu_inference: false
+
+capabilities:
+  code_generation: true
+  chat: true
+  infill: true
+  reasoning: true
+  completion: true
+  long_context: false
+
+parameters: 1_000_000_000
+size_mb: 2048
+size_reduced_mb: 1024

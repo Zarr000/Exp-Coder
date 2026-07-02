@@ -112,8 +112,8 @@ class LanguageDetector:
     
     def __init__(
         self,
-        code_confidence_threshold: float = 0.6,
-        nl_confidence_threshold: float = 0.4,
+        code_confidence_threshold: float = 0.3,
+        nl_confidence_threshold: float = 0.2,
     ):
         self.code_threshold = code_confidence_threshold
         self.nl_threshold = nl_confidence_threshold

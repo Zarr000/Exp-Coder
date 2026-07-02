@@ -98,25 +98,31 @@ class DatasetMixer:
     def sample(self, step: Optional[int] = None) -> str:
         """
         Sample a dataset name based on current mixing weights.
-        
+
         Args:
             step: Current training step (for curriculum updates)
-            
+
         Returns:
             Dataset name
         """
         if step is not None:
             self._update_weights(step)
-        
-        names = list(self._current_weights.keys())
-        weights = [self._current_weights[n] for n in names]
-        
+
+        # Filter out zero-weight datasets, keeping original ordering
+        names = []
+        weights = []
+        for n, w in self._current_weights.items():
+            if w > 0:
+                names.append(n)
+                weights.append(w)
+
+        if not names:
+            return list(self._current_weights.keys())[0]
+
         # Normalize
         total = sum(weights)
-        if total == 0:
-            return names[0]
         weights = [w / total for w in weights]
-        
+
         return self._rng.choices(names, weights=weights, k=1)[0]
     
     def record_loss(self, dataset_name: str, loss: float) -> None:

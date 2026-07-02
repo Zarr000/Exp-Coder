@@ -1,0 +1,109 @@
+# Expera Multimodal (600M parameters)
+# Full multimodal model for text, code, and images
+
+model:
+  name: expera-multimodal
+  version: "1.0"
+  architecture: transformer
+
+  # Language model dimensions
+  vocab_size: 32000
+  embedding_dim: 1280
+  hidden_dim: 1920
+  num_layers: 24
+  num_heads: 20
+  head_dim: 64
+  intermediate_size: 4864
+
+  # Vision encoder dimensions
+  vision_embed_dim: 1280
+  vision_num_layers: 16
+  vision_patch_size: 14
+
+  # Image handling
+  image_size: 448
+  num_channels: 3
+  max_images_per_turn: 8
+
+  # Multi-modal fusion
+  fusion_type: cross_attention
+  num_fusion_layers: 4
+
+  # Context and positioning
+  max_position_embeddings: 4096
+  max_image_tokens: 1024
+
+  # Regularization
+  dropout: 0.1
+  attention_dropout: 0.1
+  hidden_dropout: 0.1
+
+  # Activation
+  hidden_act: silu
+
+tokenizer:
+  type: BPE
+  vocab_size: 32000
+  max_length: 4096
+
+training:
+  # Optimization
+  optimizer: adamw
+  learning_rate: 1.5e-4
+  weight_decay: 0.01
+
+  # Training
+  batch_size: 32
+  gradient_accumulation: 4
+  epochs: 3
+
+  # Mixed precision
+  precision: bf16
+
+  # Multi-modal settings
+  image_dropout: 0.1
+  text_image_alignment: true
+
+inference:
+  max_new_tokens: 1024
+  temperature: 0.7
+  top_p: 0.9
+  quantize: q4
+
+quantization:
+  formats:
+    - fp16
+    - int8
+    - q4
+
+  sizes:
+    fp16: 1.2GB
+    int8: 600MB
+    q4: 300MB
+
+capabilities:
+  - chat
+  - code_completion
+  - tool_calling
+  - rag
+  - image_understanding
+  - visual_qa
+  - ocr
+  - image_generation
+  - multi_image_analysis
+
+constraints:
+  max_tokens: 4096
+  max_context: 4096
+  max_image_size: 448
+  max_images: 8
+  supported_formats:
+    - png
+    - jpg
+    - webp
+    - gif
+    - bmp
+
+hardware:
+  min_gpu_memory: 10GB
+  target_tokens_per_second: 40

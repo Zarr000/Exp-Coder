@@ -1,0 +1,49 @@
+# Kubernetes Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expera-api
+  namespace: expera-ai
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: expera-api
+  template:
+    metadata:
+      labels:
+        app: expera-api
+    spec:
+      containers:
+      - name: api
+        image: experaai/api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: MODEL_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: expera-config
+              key: MODEL_NAME
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: expera-secrets
+              key: API_KEY
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+            nvidia.com/gpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+            nvidia.com/gpu: "1"
+        volumeMounts:
+        - name: model-cache
+          mountPath: /models
+      volumes:
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: model-cache-pvc

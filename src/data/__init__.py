@@ -16,6 +16,7 @@ Modules:
 - dataset_validator: Validation utilities
 - dataset: Main ExperaDataset orchestrator
 - data_loader: Factory for dataloaders
+- benchmark: Benchmarking and profiling utilities
 """
 
 from .dataset_manifest import DatasetManifest, DatasetStage, DatasetStatistics, ManifestManager
@@ -32,6 +33,16 @@ from .dataset_stats import StatsCollector, DatasetStats
 from .repo_preprocessor import RepoPreprocessor, RepoFile, RepoContext
 from .dataset import ExperaDataset
 from .data_loader import get_dataloader, DataLoaderConfig, DataLoaderBenchmark
+from .benchmark import (
+    BenchmarkResult,
+    Profiler,
+    PipelineProfiler,
+    benchmark_throughput,
+    benchmark_tokenization,
+    benchmark_dataloader,
+    benchmark_memory,
+    run_full_benchmark,
+)
 
 __all__ = [
     # Manifest
@@ -62,4 +73,13 @@ __all__ = [
     "ExperaDataset",
     # DataLoader
     "get_dataloader", "DataLoaderConfig", "DataLoaderBenchmark",
+    # Benchmark
+    "BenchmarkResult",
+    "Profiler",
+    "PipelineProfiler",
+    "benchmark_throughput",
+    "benchmark_tokenization",
+    "benchmark_dataloader",
+    "benchmark_memory",
+    "run_full_benchmark",
 ]

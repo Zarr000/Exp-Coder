@@ -1,0 +1,106 @@
+# Expera Small (250M parameters)
+# Optimized for laptops and single GPUs
+
+model:
+  name: expera-small
+  version: "1.0"
+  architecture: transformer
+
+  # Model dimensions
+  vocab_size: 32000
+  embedding_dim: 1024
+  hidden_dim: 1536
+  num_layers: 16
+  num_heads: 16
+  head_dim: 64
+  intermediate_size: 3072
+
+  # Context and positioning
+  max_position_embeddings: 2048
+  rotary_emb_dim: 64
+  rope_theta: 10000.0
+
+  # Regularization
+  dropout: 0.1
+  attention_dropout: 0.1
+  hidden_dropout: 0.1
+  layer_norm_eps: 1.0e-5
+  rms_norm_eps: 1.0e-5
+
+  # Activation
+  hidden_act: silu
+
+tokenizer:
+  type: BPE
+  vocab_size: 32000
+  max_length: 2048
+  padding_side: right
+  truncation: true
+
+training:
+  # Optimization
+  optimizer: adamw
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  epsilon: 1.0e-8
+
+  # Scheduler
+  scheduler: cosine
+  warmup_steps: 200
+  min_lr: 1.0e-5
+
+  # Training
+  batch_size: 32
+  gradient_accumulation: 4
+  max_grad_norm: 1.0
+  epochs: 3
+
+  # Mixed precision
+  precision: bf16
+
+  # Efficiency
+  gradient_checkpointing: true
+  use_flash_attention: true
+
+inference:
+  # Generate settings
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repeat_penalty: 1.1
+
+  # Quantization
+  quantize: q4
+  device: auto
+
+quantization:
+  formats:
+    - fp16
+    - int8
+    - q4
+
+  sizes:
+    fp16: 500MB
+    int8: 250MB
+    q4: 125MB
+
+capabilities:
+  - chat
+  - code_completion
+  - tool_calling
+
+constraints:
+  max_tokens: 2048
+  max_context: 2048
+
+hardware:
+  # Minimum requirements
+  min_gpu_memory: 4GB
+  min_cpu_memory: 8GB
+
+  # Inference targets
+  target_tokens_per_second: 40
+  target_latency_ms: 50

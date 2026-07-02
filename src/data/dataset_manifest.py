@@ -21,21 +21,50 @@ from enum import Enum
 class DatasetStage(Enum):
     """Stages in the data processing pipeline."""
     RAW = "raw"
+    CLEANED = "cleaned"
     PROCESSED = "processed"
     TOKENIZED = "tokenized"
     SHARDED = "sharded"
+    READY = "ready"
 
 
 @dataclass
 class DatasetStatistics:
     """Statistics for a dataset at a given stage."""
-    num_documents: int = 0
-    num_tokens: int = 0
-    num_bytes: int = 0
+    total_documents: int = 0
+    total_tokens: int = 0
+    total_bytes: int = 0
     avg_doc_length: float = 0.0
     avg_tokens_per_doc: float = 0.0
     language_distribution: Dict[str, float] = field(default_factory=dict)
     quality_score_distribution: Dict[str, float] = field(default_factory=dict)
+    languages: Dict[str, int] = field(default_factory=dict)
+    quality_scores: Dict[str, float] = field(default_factory=dict)
+
+    # Backward compatible aliases
+    @property
+    def num_documents(self) -> int:
+        return self.total_documents
+
+    @num_documents.setter
+    def num_documents(self, value: int) -> None:
+        self.total_documents = value
+
+    @property
+    def num_tokens(self) -> int:
+        return self.total_tokens
+
+    @num_tokens.setter
+    def num_tokens(self, value: int) -> None:
+        self.total_tokens = value
+
+    @property
+    def num_bytes(self) -> int:
+        return self.total_bytes
+
+    @num_bytes.setter
+    def num_bytes(self, value: int) -> None:
+        self.total_bytes = value
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -55,14 +84,14 @@ class StageEntry:
     output_files: List[str] = field(default_factory=list)
     statistics: Optional[DatasetStatistics] = None
     checksum: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["stage"] = self.stage.value
         if self.statistics:
             d["statistics"] = self.statistics.to_dict()
         return d
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StageEntry":
         data = dict(data)
@@ -72,23 +101,93 @@ class StageEntry:
         return cls(**data)
 
 
+@dataclass
+class ProcessingStep:
+    """Record of a single processing step."""
+    name: str
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    input_hash: str = ""
+    output_hash: str = ""
+    duration: float = 0.0
+    timestamp: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ProcessingStep":
+        return cls(**data)
+
+
 class DatasetManifest:
     """
     Tracks the full provenance of a dataset through all processing stages.
-    
+
     Enables:
     - Reproducibility: exact parameters recorded
     - Debugging: trace issues to specific stages
     - Auditing: know what data was used
     - Incremental processing: skip completed stages
     """
-    
-    def __init__(self, name: str, version: str = "1.0.0"):
+
+    def __init__(
+        self,
+        name: str,
+        version: str = "1.0.0",
+        stage: Optional[DatasetStage] = None,
+        created_at: Optional[float] = None,
+        source_paths: Optional[List[str]] = None,
+    ):
         self.name = name
         self.version = version
-        self.created_at = time.time()
+        self.stage = stage or DatasetStage.RAW
+        self.created_at = created_at if created_at is not None else time.time()
+        self.source_paths = source_paths or []
+        self.statistics = DatasetStatistics()
         self.stages: Dict[DatasetStage, StageEntry] = {}
         self.metadata: Dict[str, Any] = {}
+        self.processing_steps: List[ProcessingStep] = []
+        self._manifest_hash: str = ""
+
+    def add_step(
+        self,
+        name: str,
+        parameters: Optional[Dict[str, Any]] = None,
+        input_hash: str = "",
+        output_hash: str = "",
+        duration: float = 0.0,
+    ) -> None:
+        """Add a processing step."""
+        step = ProcessingStep(
+            name=name,
+            parameters=parameters or {},
+            input_hash=input_hash,
+            output_hash=output_hash,
+            duration=duration,
+        )
+        self.processing_steps.append(step)
+        self._manifest_hash = self.compute_hash()
+
+    def compute_hash(self) -> str:
+        """Compute deterministic hash of manifest content."""
+        import json
+        content = json.dumps(
+            {
+                "name": self.name,
+                "version": self.version,
+                "stage": self.stage.value,
+                "created_at": self.created_at,
+                "source_paths": self.source_paths,
+                "processing_steps": [s.to_dict() for s in self.processing_steps],
+            },
+            sort_keys=True,
+        )
+        return hashlib.md5(content.encode()).hexdigest()[:16]
+
+    @property
+    def manifest_hash(self) -> str:
+        """Get the manifest hash."""
+        return self._manifest_hash
     
     def add_stage(self, entry: StageEntry) -> None:
         """Record a processing stage."""
@@ -100,7 +199,7 @@ class DatasetManifest:
     
     def has_stage(self, stage: DatasetStage) -> bool:
         """Check if a stage has been completed."""
-        return stage in self.stages
+        return stage in self.stages or stage == self.stage
     
     def compute_checksum(self, file_paths: List[str]) -> str:
         """Compute a checksum over input files for reproducibility."""
@@ -115,19 +214,33 @@ class DatasetManifest:
         return {
             "name": self.name,
             "version": self.version,
+            "stage": self.stage.value,
             "created_at": self.created_at,
+            "source_paths": self.source_paths,
+            "statistics": self.statistics.to_dict(),
             "stages": {k.value: v.to_dict() for k, v in self.stages.items()},
+            "processing_steps": [s.to_dict() for s in self.processing_steps],
             "metadata": self.metadata,
+            "manifest_hash": self.manifest_hash,
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DatasetManifest":
-        manifest = cls(name=data["name"], version=data["version"])
-        manifest.created_at = data["created_at"]
+        manifest = cls(
+            name=data["name"],
+            version=data["version"],
+            stage=DatasetStage(data.get("stage", "raw")),
+            created_at=data.get("created_at"),
+            source_paths=data.get("source_paths", []),
+        )
+        manifest.statistics = DatasetStatistics.from_dict(data.get("statistics", {}))
         manifest.metadata = data.get("metadata", {})
+        manifest._manifest_hash = data.get("manifest_hash", "")
         for stage_str, stage_data in data.get("stages", {}).items():
             stage = DatasetStage(stage_str)
             manifest.stages[stage] = StageEntry.from_dict(stage_data)
+        for step_data in data.get("processing_steps", []):
+            manifest.processing_steps.append(ProcessingStep.from_dict(step_data))
         return manifest
     
     def to_json(self, path: str) -> None:
@@ -202,3 +315,117 @@ class ManifestManager:
             data = json.load(f)
         for name, mdata in data.items():
             self.manifests[name] = DatasetManifest.from_dict(mdata)
+
+    def create_manifest(
+        self,
+        name: str,
+        version: str,
+        stage: DatasetStage,
+        source_paths: Optional[List[str]] = None,
+    ) -> DatasetManifest:
+        """Create a new manifest or update existing with new stage."""
+        # Check if existing manifest can be reused
+        if name in self.manifests:
+            existing = self.manifests[name]
+            if existing.version == version:
+                # Update stage on existing manifest
+                existing.stage = stage
+                # Add to stages dict
+                entry = StageEntry(stage=stage)
+                existing.stages[stage] = entry
+                return existing
+
+        # Create new manifest
+        manifest = DatasetManifest(
+            name=name,
+            version=version,
+            stage=stage,
+            source_paths=source_paths,
+        )
+        # Also add to stages dict
+        manifest.stages[stage] = StageEntry(stage=stage)
+        self.manifests[name] = manifest
+        return manifest
+
+    def save_manifest(self, manifest: DatasetManifest) -> str:
+        """Save manifest to disk and registry."""
+        if self.registry_path:
+            self._save_registry()
+        path = str(Path(self.registry_path).parent / f"{manifest.name}_{manifest.version}.json")
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        manifest.to_json(path)
+        return path
+
+    def load_manifest(
+        self,
+        name: str,
+        version: str,
+        stage: DatasetStage,
+    ) -> Optional[DatasetManifest]:
+        """Load a manifest by name, version, and stage."""
+        if name in self.manifests:
+            m = self.manifests[name]
+            if m.version == version and m.stage == stage:
+                return m
+        # Try to load from disk
+        if self.registry_path:
+            path = Path(self.registry_path).parent / f"{name}_{version}.json"
+            if path.exists():
+                return DatasetManifest.from_json(str(path))
+        return None
+
+    def get_cached_path(
+        self,
+        name: str,
+        version: str,
+        stage: DatasetStage,
+    ) -> Optional[str]:
+        """Get cached path for a manifest."""
+        m = self.load_manifest(name, version, stage)
+        if m and hasattr(m, 'cache_path'):
+            return m.cache_path
+        return None
+
+    def get_all_versions(self, name: str) -> List[str]:
+        """Get all versions for a dataset."""
+        versions = []
+        if name in self.manifests:
+            versions.append(self.manifests[name].version)
+        # Also scan filesystem
+        if self.registry_path:
+            parent = Path(self.registry_path).parent
+            for p in parent.glob(f"{name}_*.json"):
+                v = p.stem.replace(f"{name}_", "")
+                if v and v not in versions:
+                    versions.append(v)
+        return sorted(versions)
+
+    def validate_chain(
+        self,
+        name: str,
+        version: str,
+        required_stages: List[DatasetStage],
+    ) -> bool:
+        """Validate that all required stages exist."""
+        m = self.load_manifest(name, version, required_stages[0])
+        if not m:
+            return False
+        for stage in required_stages:
+            if not m.has_stage(stage):
+                return False
+        return True
+
+    def invalidate_cache(
+        self,
+        name: str,
+        version: str,
+        stage: DatasetStage,
+    ) -> None:
+        """Invalidate cached data for a manifest."""
+        m = self.load_manifest(name, version, stage)
+        if m and self.registry_path:
+            path = Path(self.registry_path).parent / f"{name}_{version}.json"
+            if path.exists():
+                path.unlink()
+        if name in self.manifests:
+            del self.manifests[name]

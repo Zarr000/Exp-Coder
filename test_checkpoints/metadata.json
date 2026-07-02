@@ -1,0 +1,29 @@
+{
+  "step_100": {
+    "step": 100,
+    "epoch": 0,
+    "timestamp": "2026-06-26T21:30:52.537969",
+    "metrics": {
+      "loss": 1.0
+    },
+    "tags": []
+  },
+  "step_200": {
+    "step": 200,
+    "epoch": 0,
+    "timestamp": "2026-06-26T21:30:52.631041",
+    "metrics": {
+      "loss": 0.8
+    },
+    "tags": []
+  },
+  "step_300": {
+    "step": 300,
+    "epoch": 0,
+    "timestamp": "2026-06-26T21:30:52.707808",
+    "metrics": {
+      "loss": 0.7
+    },
+    "tags": []
+  }
+}

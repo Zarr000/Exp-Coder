@@ -1,0 +1,73 @@
+# Expera Coder 350M Model Configuration
+# Balanced model for general code generation tasks
+
+model:
+  name: expera-coder-350m
+  path: checkpoints/expera_coder_350m
+  tokenizer: tokenizer/expera-coder
+  type: causal-lm
+
+architecture:
+  model_type: gpt
+  vocab_size: 32000
+  hidden_size: 1024
+  num_hidden_layers: 24
+  num_attention_heads: 16
+  intermediate_size: 4096
+  max_position_embeddings: 2048
+
+performance:
+  parameters: 350_000_000
+  parameters_estimated: 350M
+  size_mb: 700
+  precision: fp16
+  context_length: 2048
+
+inference:
+  max_batch_size: 4
+  max_tokens: 2048
+  default_tokens: 1024
+  recommended_temperature: 0.7
+  recommended_top_p: 0.9
+  recommended_top_k: 40
+
+hardware:
+  min_gpu_memory_mb: 1024
+  recommended_gpu_memory_mb: 2048
+  supports_quantization: true
+  quantizations:
+    - fp16
+    - q4
+    - q5
+    - q8
+  supports_cpu: true
+
+capabilities:
+  code_generation: true
+  chat: true
+  infill: true
+  reasoning: true
+  completion: false
+  long_context: false
+
+use_cases:
+  - Code generation (Python, JavaScript, Rust, Go)
+  - Code review and analysis
+  - Infill/mid-completion
+  - Basic reasoning tasks
+  - Development workstations
+
+deployment:
+  local: true
+  vps: true
+  cloud: true
+  edge: false
+
+# Default inference parameters
+generate:
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 40
+  repeat_penalty: 1.1
+  presence_penalty: 0.0
+  frequency_penalty: 0.0

@@ -1,0 +1,107 @@
+# Expera Base (500M parameters)
+# Optimized for desktop and entry GPU servers
+
+model:
+  name: expera-base
+  version: "1.0"
+  architecture: transformer
+
+  # Model dimensions
+  vocab_size: 32000
+  embedding_dim: 1280
+  hidden_dim: 1920
+  num_layers: 24
+  num_heads: 20
+  head_dim: 64
+  intermediate_size: 4864
+
+  # Context and positioning
+  max_position_embeddings: 4096
+  rotary_emb_dim: 64
+  rope_theta: 10000.0
+
+  # Regularization
+  dropout: 0.1
+  attention_dropout: 0.1
+  hidden_dropout: 0.1
+  layer_norm_eps: 1.0e-5
+  rms_norm_eps: 1.0e-5
+
+  # Activation
+  hidden_act: silu
+
+tokenizer:
+  type: BPE
+  vocab_size: 32000
+  max_length: 4096
+  padding_side: right
+  truncation: true
+
+training:
+  # Optimization
+  optimizer: adamw
+  learning_rate: 1.5e-4
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.999
+  epsilon: 1.0e-8
+
+  # Scheduler
+  scheduler: cosine
+  warmup_steps: 500
+  min_lr: 1.0e-6
+
+  # Training
+  batch_size: 64
+  gradient_accumulation: 4
+  max_grad_norm: 1.0
+  epochs: 3
+
+  # Mixed precision
+  precision: bf16
+
+  # Efficiency
+  gradient_checkpointing: true
+  use_flash_attention: true
+
+inference:
+  # Generate settings
+  max_new_tokens: 1024
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repeat_penalty: 1.1
+
+  # Quantization
+  quantize: q4
+  device: auto
+
+quantization:
+  formats:
+    - fp16
+    - int8
+    - q4
+
+  sizes:
+    fp16: 1GB
+    int8: 500MB
+    q4: 250MB
+
+capabilities:
+  - chat
+  - code_completion
+  - tool_calling
+  - rag
+
+constraints:
+  max_tokens: 4096
+  max_context: 4096
+
+hardware:
+  # Minimum requirements
+  min_gpu_memory: 8GB
+  min_cpu_memory: 16GB
+
+  # Inference targets
+  target_tokens_per_second: 50
+  target_latency_ms: 20
