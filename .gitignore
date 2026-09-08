@@ -32,14 +32,14 @@ ENV/
 Thumbs.db
 
 # Training artifacts (large / regenerable)
-checkpoints/
-logs/
-runs/
+/checkpoints/
+/logs/
+/runs/
 tensorboard/
 wandb/
 
 # Raw / large datasets
-data/
+/data/
 *.pt
 *.pth
 *.ckpt
