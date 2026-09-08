@@ -166,8 +166,12 @@ class BPETokenizer:
             base_vocab_size = 256 + len(self.special_tokens) + len(self.additional_special_tokens)
             num_merges = self.vocab_size - base_vocab_size
             
-        # Initialize vocabulary with bytes
-        vocab = {chr(i): i for i in range(256)}
+        # Initialize vocabulary with byte-level characters (GPT-2 style).
+        # BPE operates on byte_encoder output characters (e.g. space -> U+0120),
+        # so the base vocabulary must contain those chars -- not raw ``chr(i)``.
+        # Encoding raw ``chr(i)`` here silently mapped single bytes that are
+        # not in the printable-ASCII range to <|unk|> at encode time.
+        vocab = {self.byte_encoder[b]: b for b in range(256)}
         
         # Add special tokens
         current_id = 256
@@ -465,14 +469,53 @@ class BPETokenizer:
     def get_vocab_size(self) -> int:
         """Get vocabulary size."""
         return len(self.vocab)
-    
+
     def token_to_id(self, token: str) -> Optional[int]:
         """Convert token to ID."""
         return self.vocab.get(token)
-    
+
     def id_to_token(self, id: int) -> Optional[str]:
         """Convert ID to token."""
         return self.inverse_vocab.get(id)
+
+    # ------------------------------------------------------------------
+    # Compatibility API used by the Exp-Coder inference pipeline.
+    # (generator.py / pipeline.py expect eos_id() style helpers.)
+    # ------------------------------------------------------------------
+    def eos_id(self) -> int:
+        return self.vocab.get(self.special_tokens["eos_token"], -1)
+
+    def bos_id(self) -> int:
+        return self.vocab.get(self.special_tokens["bos_token"], -1)
+
+    def pad_id(self) -> int:
+        return self.vocab.get(self.special_tokens["pad_token"], -1)
+
+    def unk_id(self) -> int:
+        return self.vocab.get(self.special_tokens["unk_token"], -1)
+
+    def id_to_piece(self, token_id: int) -> str:
+        return self.inverse_vocab.get(token_id, self.special_tokens["unk_token"])
+
+    def decode_ids(self, ids: List[int]) -> str:
+        """Decode a list of IDs (alias of :meth:`decode`)."""
+        return self.decode(ids, skip_special_tokens=True)
+
+    @property
+    def eos_token_id(self) -> int:
+        return self.eos_id()
+
+    @property
+    def bos_token_id(self) -> int:
+        return self.bos_id()
+
+    @property
+    def pad_token_id(self) -> int:
+        return self.pad_id()
+
+    @property
+    def unk_token_id(self) -> int:
+        return self.unk_id()
     
     def __len__(self) -> int:
         """Return vocabulary size."""

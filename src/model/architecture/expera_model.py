@@ -266,25 +266,27 @@ class ExperaModel(nn.Module):
     ) -> torch.Tensor:
         """
         Create causal attention mask for autoregressive generation.
-        
+
+        Query row ``i`` (global position ``past + i``) may attend every
+        column ``j <= past + i``.
+
         Args:
-            seq_len: Current sequence length
-            total_len: Total sequence length (including past)
+            seq_len: Current sequence length (query length)
+            total_len: Total sequence length (query + past)
             dtype: Data type
             device: Device
-            
+
         Returns:
-            Causal mask (1, 1, seq_len, total_len)
+            Causal mask (1, 1, seq_len, total_len) with 0.0 (attend) and
+            -inf (masked).
         """
-        mask = torch.full(
-            (seq_len, total_len), float('-inf'), dtype=dtype, device=device
-        )
-        # Allow attending to all positions up to current
-        mask = torch.triu(mask, diagonal=total_len - seq_len + 1)
-        # Allow attending to current position
-        mask = mask.masked_fill(
-            torch.tril(torch.ones(seq_len, total_len, device=device)) == 1,
-            0.0,
+        past_len = total_len - seq_len
+        rows = torch.arange(seq_len, device=device).unsqueeze(1)
+        cols = torch.arange(total_len, device=device).unsqueeze(0)
+        mask = torch.where(
+            cols <= rows + past_len,
+            torch.zeros((), dtype=dtype, device=device),
+            torch.full((), float("-inf"), dtype=dtype, device=device),
         )
         return mask.unsqueeze(0).unsqueeze(0)
     

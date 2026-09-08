@@ -206,45 +206,35 @@ class MoELayer(nn.Module):
 
         # Apply experts
         capacity = int(seq_len * self.config.capacity_factor)
+        flat_x = x_norm.view(-1, x_norm.shape[-1])
+        flat_output = output.view(-1, x.shape[-1])
 
         for k in range(self.top_k):
             # Get indices for k-th expert
             expert_idx = expert_indices[..., k]  # (batch, seq_len)
             expert_gate = gates[..., k].unsqueeze(-1)  # (batch, seq_len, 1)
-
-            # Get mask for this expert
-            mask = expert_mask[..., k].unsqueeze(-1)  # (batch, seq_len, 1)
+            flat_gate = expert_gate.view(-1, 1)
 
             # Apply each expert
             for expert_id in range(self.num_experts):
-                # Find tokens for this expert
-                expert_tokens = (expert_idx == expert_id)  # (batch, seq_len)
+                # Find tokens for this expert (flattened across batch and seq)
+                expert_tokens = (expert_idx == expert_id).reshape(-1)  # (batch*seq,)
+                tokens_for_expert = flat_x[expert_tokens]
+
+                if expert_tokens.any() and tokens_for_expert.shape[0] > capacity:
+                    # Deterministically keep the first `capacity` routed tokens
+                    # (independent of random routing) so the layer never
+                    # crashes on shape mismatch.
+                    kept_positions = expert_tokens.nonzero(as_tuple=False)[:capacity, 0]
+                    tokens_for_expert = flat_x[kept_positions]
+                    expert_tokens = torch.zeros_like(expert_tokens)
+                    expert_tokens[kept_positions] = True
 
                 if not expert_tokens.any():
                     continue
 
-                # Get tokens for this expert
-                tokens_for_expert = x_norm[expert_tokens]  # (num_tokens, input_dim)
-
-                if tokens_for_expert.shape[0] > capacity:
-                    # Drop tokens if over capacity
-                    if self.config.drop_tokens:
-                        tokens_for_expert = tokens_for_expert[:capacity]
-                        tokens_mask = expert_tokens[:capacity]
-                        expert_tokens = expert_tokens.clone()
-                        expert_tokens[:capacity] = tokens_mask
-                    else:
-                        # Reduce capacity
-                        tokens_for_expert = tokens_for_expert[:capacity]
-                        tokens_mask = expert_tokens[:capacity]
-
-                # Process through expert
-                expert_output = self.experts[expert_id](tokens_for_expert)  # (num_tokens, output_dim)
-
-                # Update output
-                output[expert_tokens] += expert_output * expert_gate[expert_tokens]
-
-                # Track usage
+                expert_output = self.experts[expert_id](tokens_for_expert)
+                flat_output[expert_tokens] += expert_output * flat_gate[expert_tokens]
                 expert_usage[expert_id] += expert_tokens.sum()
 
         # Compute metadata
