@@ -1,17 +1,19 @@
 """
-Text Generation for Expera AI.
+Exp-Coder text generation.
 
-Supports various decoding strategies:
-- Greedy search
-- Sampling (temperature, top-k, top-p)
-- Beam search
-- Contrastive search
+Decoding strategies:
+- Greedy search (causal, KV-cache aware)
+- Sampling (temperature, top-k, top-p, KV-cache aware)
+- Beam search (correct, simple; experimental)
+- Contrastive search (experimental)
+
+``Generator`` is the high-level facade; ``InferencePipeline`` builds on it.
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Dict, Any, Tuple, Union, Callable
+from typing import Any, List, Optional, Union
 import logging
 
 import torch
@@ -51,9 +53,8 @@ class GenerationConfig:
     early_stopping: bool = False
     length_penalty: float = 1.0
 
-    # Contrastive
+    # Contrastive search
     penalty_alpha: float = 0.6
-    top_k: int = 4
 
     # Output
     echo: bool = False
@@ -65,7 +66,7 @@ class GenerationConfig:
 
 
 class BaseDecoder(ABC):
-    """Base decoder class."""
+    """Base class for token-by-token decoders."""
 
     @abstractmethod
     def decode(
@@ -73,16 +74,66 @@ class BaseDecoder(ABC):
         model: nn.Module,
         input_ids: Tensor,
         attention_mask: Optional[Tensor] = None,
-        config: GenerationConfig = None,
+        config: "GenerationConfig" = None,
     ) -> Tensor:
-        """Decode next tokens."""
-        pass
+        """Decode and return full sequence (prompt + generated tokens)."""
+        raise NotImplementedError
+
+
+def _prefill_or_step(
+    model: nn.Module,
+    input_ids: Tensor,
+    past_key_values: Optional[Any],
+    use_cache: bool,
+) -> Any:
+    """Run the model for one generation step.
+
+    First call on the full prompt returns a cache; subsequent calls feed only
+    the last token plus ``past_key_values`` (incremental KV cache).
+    """
+    if use_cache and past_key_values is not None:
+        outputs = model(
+            input_ids[:, -1:],
+            use_cache=True,
+            past_key_values=past_key_values,
+            return_dict=True,
+        )
+    else:
+        outputs = model(input_ids, use_cache=use_cache, return_dict=True)
+    return outputs
+
+
+def _apply_repetition_penalty(logits: Tensor, input_ids: Tensor, penalty: float) -> Tensor:
+    """Penalize tokens already present in the sequence."""
+    score = torch.gather(logits, -1, input_ids)
+    score = torch.where(score > 0, score / penalty, score * penalty)
+    logits.scatter_(-1, input_ids, score)
+    return logits
+
+
+def _apply_top_k(logits: Tensor, k: int) -> Tensor:
+    """Keep only the top-k logits; mask everything else to -inf."""
+    if k <= 0 or k >= logits.size(-1):
+        return logits
+    threshold = torch.topk(logits, k, dim=-1).values[..., -1, None]
+    return logits.masked_fill(logits < threshold, float("-inf"))
+
+
+def _apply_top_p(logits: Tensor, p: float) -> Tensor:
+    """Nucleus filtering: keep the smallest set whose prob sum >= p."""
+    sorted_logits, sorted_indices = torch.sort(logits, dim=-1, descending=True)
+    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+    mask = cumulative_probs > p
+    mask[..., 1:] = mask[..., :-1].clone()
+    mask[..., 0] = False
+    mask = mask.scatter(-1, sorted_indices, mask)
+    return logits.masked_fill(mask, float("-inf"))
 
 
 class GreedySearch(BaseDecoder):
-    """Greedy search decoder."""
+    """Greedy (argmax) decoding with optional incremental KV cache."""
 
-    def __init__(self, eos_token_id: int = 2):
+    def __init__(self, eos_token_id: Optional[int] = None):
         self.eos_token_id = eos_token_id
 
     def decode(
@@ -90,84 +141,41 @@ class GreedySearch(BaseDecoder):
         model: nn.Module,
         input_ids: Tensor,
         attention_mask: Optional[Tensor] = None,
-        config: GenerationConfig = None,
+        config: "GenerationConfig" = None,
     ) -> Tensor:
-        """Greedy decode."""
         config = config or GenerationConfig()
         model.eval()
-
-        max_new_tokens = config.max_new_tokens
-        max_length = config.max_length
+        max_new = config.max_new_tokens
         use_cache = config.use_cache
+        past_key_values = None
+        generated = 0
 
-        # Setup
-        device = input_ids.device
-        batch_size = input_ids.shape[0]
-        input_len = input_ids.shape[1]
-        generated_tokens = 0
-
-        # Initialize
-        if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids)
-
-        # Generation loop
         with torch.no_grad():
-            while generated_tokens < max_new_tokens and generated_tokens < max_length:
-                # Forward
-                if use_cache and cur_len > input_ids.shape[1]:
-                    # Use KV cache for incremental decoding
-                    outputs = model(
-                        input_ids[:, -1:],
-                        attention_mask=attention_mask[:, -1:],
-                        use_cache=True,
-                    )
-                    logits = outputs["logits"]
-                    next_token_logits = logits[:, -1, :]
-                else:
-                    outputs = model(
-                        input_ids,
-                        attention_mask=attention_mask,
-                        use_cache=use_cache,
-                    )
-                    logits = outputs["logits"]
-                    next_token_logits = logits[:, -1, :]
+            while generated < max_new:
+                outputs = _prefill_or_step(model, input_ids, past_key_values, use_cache)
+                past_key_values = outputs["past_key_values"] if use_cache else None
+                next_logits = outputs["logits"][:, -1, :]
 
-                # Apply repetition penalty
                 if config.repeat_penalty != 1.0:
-                    next_token_logits = self._apply_repetition_penalty(
-                        next_token_logits, input_ids, config.repeat_penalty
+                    next_logits = _apply_repetition_penalty(
+                        next_logits, input_ids, config.repeat_penalty
                     )
 
-                # Greedy selection
-                next_token = next_token_logits.argmax(dim=-1, keepdim=True)
-
-                # Append
+                next_token = next_logits.argmax(dim=-1, keepdim=True)
                 input_ids = torch.cat([input_ids, next_token], dim=-1)
-                attention_mask = torch.cat(
-                    [attention_mask, torch.ones_like(next_token)], dim=-1
-                )
-                generated_tokens += 1
+                generated += 1
 
-                # Check for EOS
-                if (next_token == self.eos_token_id).all():
+                if (self.eos_token_id is not None
+                        and (next_token == self.eos_token_id).all()):
                     break
 
         return input_ids
-
-    def _apply_repetition_penalty(
-        self, logits: Tensor, input_ids: Tensor, penalty: float
-    ) -> Tensor:
-        """Apply repetition penalty."""
-        score = torch.gather(logits, -1, input_ids)
-        score = torch.where(score < 0, score * penalty, score / penalty)
-        logits.scatter_(-1, input_ids, score)
-        return logits
 
 
 class Sampling(BaseDecoder):
-    """Sampling decoder with temperature, top-k, and top-p."""
+    """Temperature / top-k / top-p sampling with incremental KV cache."""
 
-    def __init__(self, eos_token_id: int = 2):
+    def __init__(self, eos_token_id: Optional[int] = None):
         self.eos_token_id = eos_token_id
 
     def decode(
@@ -175,113 +183,55 @@ class Sampling(BaseDecoder):
         model: nn.Module,
         input_ids: Tensor,
         attention_mask: Optional[Tensor] = None,
-        config: GenerationConfig = None,
+        config: "GenerationConfig" = None,
     ) -> Tensor:
-        """Sample decode."""
         config = config or GenerationConfig()
         model.eval()
-
-        max_new_tokens = config.max_new_tokens
-        max_length = config.max_length
+        max_new = config.max_new_tokens
         use_cache = config.use_cache
 
-        # RNG
         if config.seed is not None:
             torch.manual_seed(config.seed)
 
-        device = input_ids.device
-        batch_size = input_ids.shape[0]
-        input_len = input_ids.shape[1]
-        generated_tokens = 0
+        past_key_values = None
+        generated = 0
 
-        if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids)
-
-        # Generation loop
         with torch.no_grad():
-            while generated_tokens < max_new_tokens and generated_tokens < max_length:
-                # Forward
-                outputs = model(
-                    input_ids,
-                    attention_mask=attention_mask,
-                    use_cache=use_cache,
-                )
-                logits = outputs["logits"]
-                next_token_logits = logits[:, -1, :]
+            while generated < max_new:
+                outputs = _prefill_or_step(model, input_ids, past_key_values, use_cache)
+                past_key_values = outputs["past_key_values"] if use_cache else None
+                next_logits = outputs["logits"][:, -1, :]
 
-                # Apply repetition penalty
                 if config.repeat_penalty != 1.0:
-                    next_token_logits = self._apply_repetition_penalty(
-                        next_token_logits, input_ids, config.repeat_penalty
+                    next_logits = _apply_repetition_penalty(
+                        next_logits, input_ids, config.repeat_penalty
                     )
-
-                # Apply temperature
                 if config.temperature != 1.0:
-                    next_token_logits = next_token_logits / config.temperature
-
-                # Apply top-k filtering
-                if config.top_k > 0:
-                    next_token_logits = self._apply_top_k(next_token_logits, config.top_k)
-
-                # Apply top-p (nucleus) filtering
+                    next_logits = next_logits / config.temperature
+                next_logits = _apply_top_k(next_logits, config.top_k)
                 if config.top_p < 1.0:
-                    next_token_logits = self._apply_top_p(next_token_logits, config.top_p)
+                    next_logits = _apply_top_p(next_logits, config.top_p)
 
-                # Sample
-                probs = F.softmax(next_token_logits, dim=-1)
+                probs = F.softmax(next_logits, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
-
-                # Append
                 input_ids = torch.cat([input_ids, next_token], dim=-1)
-                attention_mask = torch.cat(
-                    [attention_mask, torch.ones_like(next_token)], dim=-1
-                )
-                generated_tokens += 1
+                generated += 1
 
-                # Check for EOS
-                if (next_token == self.eos_token_id).all():
+                if (self.eos_token_id is not None
+                        and (next_token == self.eos_token_id).all()):
                     break
 
         return input_ids
 
-    def _apply_repetition_penalty(
-        self, logits: Tensor, input_ids: Tensor, penalty: float
-    ) -> Tensor:
-        """Apply repetition penalty."""
-        score = torch.gather(logits, -1, input_ids)
-        score = torch.where(score < 0, score * penalty, score / penalty)
-        logits.scatter_(-1, input_ids, score)
-        return logits
-
-    def _apply_top_k(self, logits: Tensor, k: int) -> Tensor:
-        """Apply top-k filtering."""
-        # Get top k indices - this has same shape as logits
-        top_k_indices = torch.topk(logits, k, dim=-1).indices
-        # Create a mask of -inf
-        mask = torch.full_like(logits, float("-inf"))
-        # Scatter 0.0 at top-k positions (keeps them)
-        mask.scatter_(-1, top_k_indices, 0.0)
-        return logits + mask
-
-    def _apply_top_p(self, logits: Tensor, p: float) -> Tensor:
-        """Apply nucleus (top-p) filtering."""
-        sorted_logits, sorted_indices = torch.sort(logits, dim=-1, descending=True)
-        cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-
-        # Mask tokens above p
-        mask = cumulative_probs > p
-        mask[..., 1:] = mask[..., :-1].clone()
-        mask[..., 0] = False
-
-        # Scatter back
-        mask = mask.scatter(-1, sorted_indices, mask)
-        return logits.masked_fill(mask, float("-inf"))
-
 
 class BeamSearch(BaseDecoder):
-    """Beam search decoder."""
+    """Simple, arithmetic-correct beam search (experimental).
 
-    def __init__(self, eos_token_id: int = 2):
+    Runs without the KV cache and does not mask finished hypotheses, so it is
+    a reference implementation, not a tuned one.
+    """
+
+    def __init__(self, eos_token_id: Optional[int] = None):
         self.eos_token_id = eos_token_id
 
     def decode(
@@ -289,88 +239,55 @@ class BeamSearch(BaseDecoder):
         model: nn.Module,
         input_ids: Tensor,
         attention_mask: Optional[Tensor] = None,
-        config: GenerationConfig = None,
+        config: "GenerationConfig" = None,
     ) -> Tensor:
-        """Beam search decode."""
         config = config or GenerationConfig()
         model.eval()
-
-        num_beams = config.num_beams
-        max_new_tokens = config.max_new_tokens
-        length_penalty = config.length_penalty
-
-        device = input_ids.device
         batch_size = input_ids.shape[0]
+        num_beams = max(1, config.num_beams)
+        if num_beams == 1:
+            return GreedySearch(self.eos_token_id).decode(
+                model, input_ids, attention_mask, config
+            )
 
-        # Expand input for beams
-        input_ids = input_ids.repeat_interleave(num_beams, dim=0)
-        if attention_mask is not None:
-            attention_mask = attention_mask.repeat_interleave(num_beams, dim=0)
+        beams = input_ids.repeat_interleave(num_beams, dim=0)
+        log_probs_acc = torch.zeros(batch_size * num_beams, device=input_ids.device)
 
-        # Beam scores
-        beam_scores = torch.zeros(batch_size, num_beams, device=device)
-        beam_scores[:, 1:] = float("-inf")
-        beam_scores = beam_scores.view(-1)
-
-        # Generation
         with torch.no_grad():
-            for _ in range(max_new_tokens):
-                # Forward
-                outputs = model(input_ids, attention_mask=attention_mask)
-                logits = outputs["logits"]
-                next_token_logits = logits[:, -1, :]
+            for _ in range(config.max_new_tokens):
+                logits = model(beams, return_dict=True)["logits"][:, -1, :]
+                log_prob = F.log_softmax(logits, dim=-1)
+                log_prob = log_prob + log_probs_acc.unsqueeze(-1)
+                log_prob = log_prob.view(batch_size, num_beams * logits.size(-1))
 
-                # Apply repetition penalty
-                if config.repeat_penalty != 1.0:
-                    next_token_logits = self._apply_repetition_penalty(
-                        next_token_logits, input_ids, config.repeat_penalty
-                    )
+                top_scores, top_pos = torch.topk(log_prob, num_beams, dim=-1)
+                beam_prev = top_pos // logits.size(-1)
+                tokens = top_pos % logits.size(-1)
 
-                # Compute log probs
-                log_probs = F.log_softmax(next_token_logits, dim=-1)
-
-                # Add beam scores
-                log_probs = log_probs + beam_scores.unsqueeze(-1)
-
-                # Flatten for top-k
-                log_probs = log_probs.view(batch_size, -1)
-
-                # Select top beams
-                top_scores, next_tokens = torch.topk(
-                    log_probs, num_beams, dim=-1, largest=True, sorted=True
+                beam_prev_global = (
+                    torch.arange(batch_size, device=beams.device).unsqueeze(-1)
+                    * num_beams
+                    + beam_prev
+                ).reshape(-1)
+                beams = torch.cat(
+                    [beams[beam_prev_global], tokens.reshape(-1, 1)], dim=-1
                 )
+                log_probs_acc = top_scores.reshape(-1)
 
-                # Update beam scores
-                beam_scores = top_scores.view(-1)
-
-                # Update input IDs
-                next_tokens = next_tokens.view(-1, 1)
-                input_ids = torch.cat([input_ids, next_tokens], dim=-1)
-
-                # Check for EOS
-                if (next_tokens == self.eos_token_id).any():
+                if (self.eos_token_id is not None
+                        and (beams[:, -1] == self.eos_token_id).all()):
                     break
 
-        # Select best beam
-        best_beam = beam_scores.view(batch_size, num_beams).argmax(dim=-1)
-        return input_ids.view(batch_size, num_beams, -1)[
-            torch.arange(batch_size, device=device), best_beam
+        best = log_probs_acc.view(batch_size, num_beams).argmax(dim=-1)
+        return beams.view(batch_size, num_beams, -1)[
+            torch.arange(batch_size, device=beams.device), best
         ]
-
-    def _apply_repetition_penalty(
-        self, logits: Tensor, input_ids: Tensor, penalty: float
-    ) -> Tensor:
-        """Apply repetition penalty."""
-        score = torch.gather(logits, -1, input_ids)
-        score = torch.where(score < 0, score * penalty, score / penalty)
-        logits.scatter_(-1, input_ids, score)
-        return logits
 
 
 class ContrastiveSearch(BaseDecoder):
-    """Contrastive search decoder."""
+    """Contrastive search (experimental, minimally repaired)."""
 
-    def __init__(self, eos_token_id: int = 2):
+    def __init__(self, eos_token_id: Optional[int] = None):
         self.eos_token_id = eos_token_id
 
     def decode(
@@ -378,139 +295,91 @@ class ContrastiveSearch(BaseDecoder):
         model: nn.Module,
         input_ids: Tensor,
         attention_mask: Optional[Tensor] = None,
-        config: GenerationConfig = None,
+        config: "GenerationConfig" = None,
     ) -> Tensor:
-        """Contrastive decode."""
         config = config or GenerationConfig()
         model.eval()
-
-        max_new_tokens = config.max_new_tokens
+        max_new = config.max_new_tokens
         penalty_alpha = config.penalty_alpha
         top_k = config.top_k
+        generated = 0
 
-        device = input_ids.device
-        batch_size = input_ids.shape[0]
-        cur_len = input_ids.shape[1]
-
-        if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids)
-
-        # Generation loop
         with torch.no_grad():
-            for _ in range(max_new_tokens):
-                # Forward
-                outputs = model(input_ids, attention_mask=attention_mask)
-                logits = outputs["logits"]
-                next_token_logits = logits[:, -1, :]
+            while generated < max_new:
+                outputs = model(input_ids, return_dict=True)
+                next_logits = outputs["logits"][:, -1, :]
 
-                # Apply repetition penalty
                 if config.repeat_penalty != 1.0:
-                    next_token_logits = self._apply_repetition_penalty(
-                        next_token_logits, input_ids, config.repeat_penalty
+                    next_logits = _apply_repetition_penalty(
+                        next_logits, input_ids, config.repeat_penalty
                     )
-                    # Mask previously seen tokens
-                    for tok in input_ids[0]:
-                        next_token_logits[0, tok] = float("-inf")
 
-                # Top-k selection with penalty
-                scores = next_token_logits.clone()
-                for idx in range(batch_size):
+                scores = next_logits.clone()
+                for idx in range(input_ids.shape[0]):
                     top_k_vals, top_k_idx = torch.topk(scores[idx], top_k)
-                    for i, tok in enumerate(input_ids[idx]):
+                    for tok in input_ids[idx]:
                         if tok in top_k_idx:
                             scores[idx, tok] *= penalty_alpha
                         else:
                             scores[idx, tok] = float("-inf")
 
-                # Sample from top-k
                 probs = F.softmax(scores, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
-
-                # Append
                 input_ids = torch.cat([input_ids, next_token], dim=-1)
-                attention_mask = torch.cat(
-                    [attention_mask, torch.ones_like(next_token)], dim=-1
-                )
-                generated_tokens += 1
+                generated += 1
 
-                # Check for EOS
-                if (next_token == self.eos_token_id).all():
+                if (self.eos_token_id is not None
+                        and (next_token == self.eos_token_id).all()):
                     break
 
         return input_ids
 
-    def _apply_repetition_penalty(
-        self, logits: Tensor, input_ids: Tensor, penalty: float
-    ) -> Tensor:
-        """Apply repetition penalty."""
-        score = torch.gather(logits, -1, input_ids)
-        score = torch.where(score < 0, score * penalty, score / penalty)
-        logits.scatter_(-1, input_ids, score)
-        return logits
-
 
 def is_valid_generation_token(token_id: int, tokenizer: Any) -> bool:
     """
-    Check if a token is valid for generation output.
+    Check whether a token is a reasonable text-generation output.
 
-    Filters:
-    - Empty strings after decode
-    - Control tokens
-    - Invalid special IDs
-
-    Returns:
-        True if token should be kept in output
+    Filters special/control tokens and empty decodes.
     """
     if tokenizer is None:
         return True
 
-    # Check special IDs
     eos_id = tokenizer.eos_id()
     bos_id = tokenizer.bos_id()
     pad_id = tokenizer.pad_id()
     unk_id = tokenizer.unk_id()
 
-    # Skip EOS immediately
     if token_id == eos_id:
         return False
-
-    # Skip padding
     if pad_id >= 0 and token_id == pad_id:
         return False
 
-    # Check piece decode
     piece = tokenizer.id_to_piece(token_id)
 
-    # Skip unknown token
-    if token_id == unk_id and unk_id != 0:  # ID 0 might be real
+    if token_id == unk_id:
         return False
 
-    # Skip control tokens (start with < and end with >)
     if piece.startswith("<") and piece.endswith(">"):
-        # Allow known good tokens
-        if piece in ["<unk>", "<s>", "</s>"]:
-            return True
         return False
 
-    # Decode and check if empty
     try:
         decoded = tokenizer.decode_ids([token_id])
         if not decoded or not decoded.strip():
             return False
-    except:
+    except Exception:
         return False
 
     return True
 
 
 class Generator:
-    """Text generator with multiple decoding strategies."""
+    """Text generator facade over the decoding strategies."""
 
     def __init__(
         self,
         model: nn.Module,
         tokenizer: Any = None,
-        config: GenerationConfig = None,
+        config: "GenerationConfig" = None,
         debug: bool = False,
     ):
         self.model = model
@@ -518,16 +387,14 @@ class Generator:
         self.config = config or GenerationConfig()
         self.debug = debug
 
-        # Select decoder
-        eos_token_id = tokenizer.eos_id() if tokenizer else 2
+        eos_token_id = tokenizer.eos_id() if tokenizer else None
 
-        if self.config.strategy == DecodingStrategy.GREEDY:
+        strategy = self.config.strategy
+        if strategy == DecodingStrategy.GREEDY:
             self.decoder = GreedySearch(eos_token_id)
-        elif self.config.strategy == DecodingStrategy.SAMPLING:
-            self.decoder = Sampling(eos_token_id)
-        elif self.config.strategy == DecodingStrategy.BEAM:
+        elif strategy == DecodingStrategy.BEAM:
             self.decoder = BeamSearch(eos_token_id)
-        elif self.config.strategy == DecodingStrategy.CONTRASTIVE:
+        elif strategy == DecodingStrategy.CONTRASTIVE:
             self.decoder = ContrastiveSearch(eos_token_id)
         else:
             self.decoder = Sampling(eos_token_id)
@@ -539,31 +406,16 @@ class Generator:
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
         top_k: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> Union[str, List[str]]:
-        """
-        Generate text from prompt.
-
-        Args:
-            prompt: Input prompt(s)
-            max_new_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Nucleus sampling threshold
-            top_k: Top-k sampling
-            **kwargs: Additional config overrides
-
-        Returns:
-            Generated text(s)
-        """
-        # Tokenize
-        if isinstance(prompt, str):
+        """Generate text from a prompt (or list of prompts)."""
+        if isinstance(prompt, (str, Tensor)):
             prompts = [prompt]
         else:
-            prompts = prompt
+            prompts = list(prompt)
 
         input_ids = self._tokenize(prompts)
 
-        # Override config
         config = self._copy_config(**kwargs)
         if max_new_tokens is not None:
             config.max_new_tokens = max_new_tokens
@@ -574,98 +426,58 @@ class Generator:
         if top_k is not None:
             config.top_k = top_k
 
-        # Generate
-        output_ids = self.decoder.decode(
-            self.model, input_ids, config=config
-        )
+        output_ids = self.decoder.decode(self.model, input_ids, config=config)
 
-        # Debug logging
         if self.debug:
-            import time
-            start_time = time.time()
-            logger.debug(f"DEBUG generate:")
-            logger.debug(f"  prompt: {repr(prompt)[:100]}")
-            logger.debug(f"  input_ids: {input_ids.tolist()}")
-            logger.debug(f"  generated_ids: {output_ids.tolist()}")
-            logger.debug(f"  first predicted token: {output_ids[0, input_ids.shape[1]].item()}")
-            logger.debug(f"  generation time: {time.time() - start_time:.4f}s")
+            start = (input_ids.shape[1], output_ids.shape[1])
+            logger.info(
+                "DEBUG generate: prompt=%d tokens, output=%d tokens",
+                start[0], start[1],
+            )
 
-        # Decode
         return self._decode(output_ids, input_ids)
 
-    def _tokenize(self, prompts: List[str]) -> Tensor:
-        """Tokenize prompts."""
-        if self.tokenizer:
-            # SentencePiece encode returns a list of ids
-            # Handle both single string and list of strings
-            if len(prompts) == 1:
-                ids = self.tokenizer.encode(prompts[0])
-                input_ids = torch.tensor([ids], dtype=torch.long)
-            else:
-                # Batch processing - encode each prompt
-                all_ids = []
-                for prompt in prompts:
-                    ids = self.tokenizer.encode(prompt)
-                    all_ids.append(ids)
-                input_ids = torch.tensor(all_ids, dtype=torch.long)
-        else:
-            # Dummy tokenization
-            input_ids = torch.randint(0, 1000, (len(prompts), 10))
+    def _tokenize(self, prompts: List[Any]) -> Tensor:
+        if self.tokenizer is None:
+            return torch.randint(0, 1000, (len(prompts), 10))
 
-        return input_ids
+        all_ids = []
+        for prompt in prompts:
+            if isinstance(prompt, Tensor):
+                all_ids.append(prompt.reshape(-1).tolist())
+            else:
+                all_ids.append(self.tokenizer.encode(str(prompt)))
+
+        max_len = max(len(ids) for ids in all_ids)
+        pad_id = self.tokenizer.pad_id() if hasattr(self.tokenizer, "pad_id") else 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_ids]
+        return torch.tensor(padded, dtype=torch.long)
 
     def _decode(self, output_ids: Tensor, input_ids: Tensor) -> Union[str, List[str]]:
-        """Decode output IDs."""
-        if self.tokenizer:
-            # Convert to numpy and handle different tensor shapes
-            output_ids = output_ids.cpu()
-            input_len = input_ids.shape[1]
-            texts = []
-
-            # Handle both 2D and 1D tensors
-            if output_ids.dim() == 2:
-                for ids in output_ids:
-                    # Remove input tokens (only decode newly generated)
-                    gen_ids = ids[input_len:].tolist()
-                    text = self.tokenizer.decode(gen_ids)
-                    texts.append(text)
-            else:
-                gen_ids = output_ids[input_len:].tolist()
-                text = self.tokenizer.decode(gen_ids)
-                texts.append(text)
-
-            # Check for empty or special-token-only responses
-            result = texts[0] if len(texts) == 1 else texts
-            return self._filter_response(result)
-        else:
+        if self.tokenizer is None:
             return "Generated text (no tokenizer)"
 
-    def _filter_response(self, text: str) -> str:
-        """Filter and clean response text."""
+        output_ids = output_ids.detach().cpu()
+        input_len = input_ids.shape[1]
+        texts = []
+        for ids in output_ids:
+            gen_ids = ids[input_len:].tolist()
+            texts.append(self.tokenizer.decode(gen_ids, skip_special_tokens=True))
+
+        if len(texts) == 1:
+            return self._filter_response(texts[0])
+        return [self._filter_response(t) for t in texts]
+
+    @staticmethod
+    def _filter_response(text: str) -> str:
+        """Clean control characters; preserve everything else."""
         if not text:
             return ""
-
-        # Check for empty after strip
-        stripped = text.strip()
-        if not stripped:
-            return ""
-
-        # For Phase 12: Allow repetitive output from undertrained models
-        # The model IS generating text - don't filter it out completely
-        # Only filter completely empty or all-whitespace
-        if len(stripped) == 0:
-            return ""
-
-        # Filter out control characters but keep basic punctuation
         import re
-        cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+        cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text).strip()
+        return cleaned
 
-        result = cleaned.strip()
-        # Only return empty if literally nothing left
-        return result if result else ""
-
-    def _copy_config(self, **kwargs) -> GenerationConfig:
-        """Copy config with overrides."""
+    def _copy_config(self, **kwargs) -> "GenerationConfig":
         config = GenerationConfig(
             strategy=self.config.strategy,
             max_new_tokens=self.config.max_new_tokens,

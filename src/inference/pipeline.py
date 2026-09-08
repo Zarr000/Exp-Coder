@@ -132,7 +132,7 @@ class InferencePipeline:
 
         # Create model with config values
         model = ExperaModel(
-            vocab_size=config.get("vocab_size", 200),
+            vocab_size=config.get("vocab_size", 50304),
             hidden_size=config.get("hidden_size", 768),
             num_layers=config.get("num_hidden_layers", 12),
             num_heads=config.get("num_attention_heads", 8),
@@ -149,32 +149,41 @@ class InferencePipeline:
         return model
 
     def _load_tokenizer(self, model_path: str) -> Any:
-        """Load tokenizer from model path."""
-        import sentencepiece as spm
+        """Load a tokenizer for the checkpoint directory.
+
+        Prefers the canonical Exp-Coder byte-level BPE format
+        (``vocab.json`` / ``merges.txt`` / ``config.json``), falling back to
+        a legacy SentencePiece ``tokenizer.model``.
+        """
         from pathlib import Path
+        from src.tokenizer import BPETokenizer
 
         model_path = Path(model_path)
 
-        # Try common tokenizer filenames
-        for name in ['tokenizer.model', 'tokenizer_config.json']:
-            tokenizer_path = model_path / name
-            if tokenizer_path.exists():
-                break
-        else:
-            # Check in subdirs
-            for subdir in ['tokenizer', '.']:
-                tokenizer_path = model_path / subdir / 'tokenizer.model'
-                if tokenizer_path.exists():
-                    break
-            else:
-                logger.warning(f"No tokenizer found in {model_path}, using fallback")
-                return None
+        for candidate in (model_path, model_path / "tokenizer"):
+            if (candidate / "config.json").exists() and (candidate / "vocab.json").exists():
+                try:
+                    return BPETokenizer.load(str(candidate))
+                except Exception as exc:
+                    logger.warning(
+                        "BPETokenizer load failed for %s (%s); trying SentencePiece",
+                        candidate, exc,
+                    )
 
-        # Load SentencePiece model
-        tokenizer = spm.SentencePieceProcessor()
-        tokenizer.load(str(tokenizer_path))
-        logger.info(f"Loaded tokenizer from {tokenizer_path}")
-        return tokenizer
+        import sentencepiece as spm
+        for subdir in ("", "tokenizer"):
+            tokenizer_path = model_path / subdir / "tokenizer.model"
+            if tokenizer_path.exists():
+                tokenizer = spm.SentencePieceProcessor()
+                tokenizer.load(str(tokenizer_path))
+                logger.info("Loaded SentencePiece tokenizer from %s", tokenizer_path)
+                return tokenizer
+
+        logger.warning(
+            "No tokenizer found in %s (expected BPETokenizer vocab.json or "
+            "SentencePiece tokenizer.model); using fallback", model_path,
+        )
+        return None
 
     def generate(
         self,
