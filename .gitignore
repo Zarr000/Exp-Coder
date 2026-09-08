@@ -41,6 +41,9 @@ wandb/
 # Raw / large datasets
 /data/
 *.pt
+
+# Benchmark generated artifacts (regenerate via benchmarks/make_code_corpus.py)
+/benchmarks/data/
 *.pth
 *.ckpt
 *.safetensors
