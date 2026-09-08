@@ -1,6 +1,9 @@
 """
-Expera AI - Original Large Language Model
-Setup configuration for package installation
+Exp-Coder - Original Large Language Model
+
+Setup configuration for package installation.
+Author: Zarr
+Studio: Exp Works
 """
 
 from setuptools import setup, find_packages
@@ -9,18 +12,27 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+    requirements = [
+        line.strip()
+        for line in fh
+        if line.strip() and not line.startswith("#")
+    ]
+
+# Core implementation lives in src/ (kept importable as `src.*` for legacy
+# compatibility); `exp_coder` is the canonical public facade package.
+packages = find_packages(where="src") + ["exp_coder"]
 
 setup(
-    name="expera-ai",
+    name="exp-coder",
     version="0.1.0",
-    author="Expera AI Team",
-    description="An original Large Language Model built from scratch for software development and creative visual generation",
+    author="Zarr",
+    description="An original decoder-only language model built from scratch for software development",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/Zarr000/Expera-Ai",
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    url="https://github.com/Zarr000/Exp-Coder",
+    packages=packages,
+    package_dir={"": "src", "exp_coder": "exp_coder"},
+    package_data={"": ["*.yaml", "*.yml"]},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",

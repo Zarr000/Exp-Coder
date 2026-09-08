@@ -1,0 +1,23 @@
+# Exp-Coder training configuration (canonical)
+# ---------------------------------------------------------------
+# Only fields actually understood by scripts/train.py and the Trainer.
+# bf16/fp16 are only active when CUDA is available; CPU always runs fp32.
+
+training:
+  seed: 42
+  device: auto            # auto -> CUDA if available, else CPU
+  batch_size: 8
+  gradient_accumulation_steps: 4
+  sequence_length: 1024
+  learning_rate: 3.0e-4
+  weight_decay: 0.01
+  max_steps: 100000
+  warmup_steps: 2000
+  gradient_clip_norm: 1.0
+  logging_interval: 100
+  save_interval: 5000
+  eval_interval: 1000     # 0 disables mid-training evaluation
+  output_dir: checkpoints/exp-coder-120m
+  use_ema: false
+  use_amp: true           # only effective on CUDA
+  amp_dtype: bf16         # bf16 or fp16

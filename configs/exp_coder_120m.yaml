@@ -1,0 +1,29 @@
+# Exp-Coder 120M — canonical model configuration
+# ---------------------------------------------------------------
+# This is the SINGLE canonical architecture for the Exp-Coder 120M
+# development model. Values below mirror the arguments accepted by
+# src/model/architecture/expera_model.py (ExperaModel).
+#
+# Estimated parameters with these values (tied embeddings): ~123.6M.
+#   vocab 50304 * 768 + 12 layers * (4*768*768 attention) + 2*768*3072 FFN
+# Use `python -c "from src.config import load_model_config; ..."` to verify.
+
+model:
+  name: Exp-Coder 120M
+  vocab_size: 50304
+  hidden_size: 768
+  num_layers: 12
+  num_heads: 12
+  num_kv_heads: 12           # == num_heads (full attention here; GQA is
+                             # supported by setting e.g. num_kv_heads: 4)
+  head_dim: null             # null -> hidden_size // num_heads = 64
+  intermediate_size: 3072    # 4 * hidden_size for GELU
+  max_position_embeddings: 2048
+  activation: gelu
+  dropout: 0.1
+  attention_dropout: 0.1
+  use_rope: true
+  rope_theta: 10000.0
+  layer_norm_eps: 1.0e-5
+  padding_idx: null
+  std: 0.02                  # initialization std dev

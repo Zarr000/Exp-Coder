@@ -1,0 +1,23 @@
+# Exp-Coder Tiny — DEBUG ONLY
+# ---------------------------------------------------------------
+# Fast CPU iteration / tests / smoke runs. NOT a production config.
+# Must not be treated as canonical; contents are arbitrary small sizes.
+
+model:
+  name: Exp-Coder Tiny (debug)
+  vocab_size: 512
+  hidden_size: 64
+  num_layers: 2
+  num_heads: 4
+  num_kv_heads: 2
+  head_dim: null
+  intermediate_size: 256
+  max_position_embeddings: 128
+  activation: gelu
+  dropout: 0.0
+  attention_dropout: 0.0
+  use_rope: true
+  rope_theta: 10000.0
+  layer_norm_eps: 1.0e-5
+  padding_idx: null
+  std: 0.02

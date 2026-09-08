@@ -32,7 +32,7 @@ class ChatResult:
     generated: str
     similarity: float = 0.0
     fluency: float = 0.0
-   Relevance: float = 0.0
+    relevance: float = 0.0
     overall: float = 0.0
 
 
