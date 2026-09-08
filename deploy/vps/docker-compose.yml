@@ -1,0 +1,65 @@
+# Expera AI VPS Docker Compose
+version: "3.8"
+
+services:
+  expera-api:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile
+    image: expera-ai:vps
+    container_name: expera-api-vps
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../checkpoints:/app/checkpoints
+      - ../../tokenizer:/app/tokenizer
+      - model-cache:/app/models
+    environment:
+      - MODEL_PATH=/app/checkpoints/expera_coder_350m
+      - DEVICE=cuda
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - expera-net
+
+  # Optional: Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: expera-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+    networks:
+      - expera-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: expera-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+    networks:
+      - expera-net
+
+volumes:
+  model-cache:
+
+networks:
+  expera-net:
+    driver: bridge

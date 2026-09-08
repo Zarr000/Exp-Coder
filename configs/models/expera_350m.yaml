@@ -1,0 +1,118 @@
+# Expera 350M Model Configuration
+# Balanced model for general code generation
+
+model:
+  name: expera-350m
+  version: "1.0"
+
+architecture:
+  # Model type
+  model_type: causal_lm
+  architecture: gpt
+
+  # Vocab
+  vocab_size: 32000
+  tie_word_embeddings: false
+
+  # Embeddings
+  embedding_dim: 1024
+
+  # Encoder
+  num_layers: 24
+  num_heads: 16
+  kv_heads: 16  # MHA
+
+  # Feed-forward
+  hidden_dim: 4096  # 4 * embedding_dim
+
+  # Context
+  max_position_embeddings: 2048
+
+  # Normalization
+  rms_norm_eps: 1.0e-5
+  norm_first: false
+
+  # Activation
+  activation: gelu
+
+  # Dropout
+  attention_dropout: 0.0
+  hidden_dropout: 0.0
+
+  # Initialization
+  initializer_range: 0.02
+
+rope:
+  enabled: true
+  type: yarn
+  scaling: 1.0
+  original_max_pos_embeddings: 2048
+
+attention:
+  type: flash
+  bias: false
+
+moe:
+  enabled: false
+  num_experts: 8
+  top_k: 2
+  routing: sinkhorn
+  normalize_routing_weights: true
+
+training:
+  # Optimizer
+  optimizer: adamw
+  learning_rate: 8.0e-5
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1.0e-8
+
+  # Scheduler
+  scheduler: cosine
+  warmup_steps: 1000
+  min_lr_ratio: 0.1
+
+  # Batch
+  batch_size: 256
+  gradient_accumulation: 2
+  max_seq_length: 2048
+
+  # Mixed precision
+  precision: bf16
+
+  # Gradient clipping
+  clip_grad_value: 1.0
+
+inference:
+  batch_size: 4
+  max_tokens: 2048
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 40
+
+quantization:
+  bits: 16
+  method: default
+
+hardware:
+  gpu_memory_min_gb: 4
+  gpu_memory_recommended_gb: 8
+
+  inference_batch_size: 4
+  max_batch_size: 8
+
+  supports_cpu: true
+  cpu_inference: true
+
+capabilities:
+  code_generation: true
+  chat: true
+  infill: true
+  reasoning: true
+  completion: false
+  long_context: false
+
+parameters: 350_000_000
+size_mb: 700
+size_reduced_mb: 350

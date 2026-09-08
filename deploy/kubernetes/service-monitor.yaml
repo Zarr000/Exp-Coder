@@ -1,0 +1,19 @@
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: expera-api-monitor
+  namespace: expera-ai
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: expera-api
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+  namespaceSelector:
+    matchNames:
+    - expera-ai

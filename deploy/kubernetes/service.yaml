@@ -1,0 +1,15 @@
+# Kubernetes Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: expera-api
+  namespace: expera-ai
+spec:
+  type: LoadBalancer
+  selector:
+    app: expera-api
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+  sessionAffinity: None

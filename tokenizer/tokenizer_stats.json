@@ -1,0 +1,8 @@
+{
+  "vocab_size": 200,
+  "model_type": "unigram",
+  "vocab_size_target": 50304,
+  "context_length": 2048,
+  "actual_vocab_size": 200,
+  "note": "Limited due to sentencepiece Windows limitation"
+}

@@ -1,0 +1,22 @@
+[
+  {"instruction": "What is 7 + 8?", "response": "7 + 8 equals 15."},
+  {"instruction": "What is 12 times 6?", "response": "12 times 6 equals 72."},
+  {"instruction": "What is 100 divided by 4?", "response": "100 divided by 4 equals 25."},
+  {"instruction": "What is 15 minus 9?", "response": "15 minus 9 equals 6."},
+  {"instruction": "What is 3 squared?", "response": "3 squared is 9 (3 × 3 = 9)."},
+  {"instruction": "What is the square root of 64?", "response": "The square root of 64 is 8."},
+  {"instruction": "What is 2 to the power of 5?", "response": "2 to the power of 5 equals 32."},
+  {"instruction": "What is 45 plus 55?", "response": "45 plus 55 equals 100."},
+  {"instruction": "What is 17 times 3?", "response": "17 times 3 equals 51."},
+  {"instruction": "What is 200 minus 87?", "response": "200 minus 87 equals 113."},
+  {"instruction": "Calculate 50 percent of 80", "response": "50 percent of 80 is 40."},
+  {"instruction": "What is 144 divided by 12?", "response": "144 divided by 12 equals 12."},
+  {"instruction": "What is 9 times 11?", "response": "9 times 11 equals 99."},
+  {"instruction": "What is 25 times 4?", "response": "25 times 4 equals 100."},
+  {"instruction": "What is 7 times 7?", "response": "7 times 7 equals 49."},
+  {"instruction": "What is 81 divided by 9?", "response": "81 divided by 9 equals 9."},
+  {"instruction": "What is 1000 minus 234?", "response": "1000 minus 234 equals 766."},
+  {"instruction": "What is 4 factorial?", "response": "4 factorial (4!) equals 24 (4×3×2×1=24)."},
+  {"instruction": "What is 6 squared plus 8 squared?", "response": "36 + 64 = 100, but that's not the full Pythagorean triples calculation."},
+  {"instruction": "What is the cube root of 27?", "response": "The cube root of 27 is 3."}
+]

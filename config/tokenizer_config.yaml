@@ -1,0 +1,133 @@
+# Expera AI Tokenizer Configuration
+# This file defines tokenizer settings and vocabulary building parameters
+
+tokenizer:
+  name: "expera-bpe"
+  type: "bpe"  # Options: bpe, wordpiece, unigram
+  
+  # Vocabulary settings
+  vocab:
+    vocab_size: 50304  # Must match model config (optimized for GPU)
+    min_frequency: 2   # Minimum frequency for a token to be included
+    
+  # Special tokens
+  special_tokens:
+    pad_token: "<|pad|>"
+    unk_token: "<|unk|>"
+    bos_token: "<|startoftext|>"
+    eos_token: "<|endoftext|>"
+    
+    # Additional special tokens for code and structure
+    additional_tokens:
+      - "<|code|>"
+      - "<|/code|>"
+      - "<|python|>"
+      - "<|javascript|>"
+      - "<|java|>"
+      - "<|cpp|>"
+      - "<|html|>"
+      - "<|css|>"
+      - "<|sql|>"
+      - "<|bash|>"
+      - "<|comment|>"
+      - "<|/comment|>"
+      - "<|function|>"
+      - "<|/function|>"
+      - "<|class|>"
+      - "<|/class|>"
+      - "<|image|>"
+      - "<|/image|>"
+      - "<|user|>"
+      - "<|assistant|>"
+      - "<|system|>"
+      
+  # BPE-specific settings
+  bpe:
+    # Training parameters
+    num_merges: 50000  # Number of merge operations
+    character_coverage: 0.9995
+    
+    # Byte-level BPE (like GPT-2)
+    byte_level: true
+    
+    # Pre-tokenization
+    pretokenization:
+      split_on_whitespace: true
+      split_on_punctuation: false
+      lowercase: false
+      
+    # Normalization
+    normalization:
+      nfc: true  # Unicode normalization
+      strip_accents: false
+      lowercase: false
+      
+  # Training corpus
+  training:
+    # Data sources for vocabulary building
+    corpus_paths:
+      - "./data/raw/code_corpus.txt"
+      - "./data/raw/text_corpus.txt"
+      
+    # Sampling
+    max_samples: 1000000  # Maximum number of samples to use
+    sample_ratio: 1.0     # Ratio of corpus to use
+    
+    # Processing
+    batch_size: 1000
+    num_workers: 4
+    
+  # Encoding settings
+  encoding:
+    # Padding
+    padding_side: "right"  # Options: right, left
+    truncation_side: "right"
+    
+    # Maximum length
+    max_length: 2048
+    
+    # Return tensors
+    return_tensors: "pt"  # Options: pt (PyTorch), np (NumPy), tf (TensorFlow)
+    
+  # Decoding settings
+  decoding:
+    skip_special_tokens: true
+    clean_up_tokenization_spaces: true
+    
+  # Code-specific features
+  code:
+    # Preserve code structure
+    preserve_indentation: true
+    preserve_newlines: true
+    
+    # Language-specific handling
+    language_detection: true
+    
+    # Code tokens
+    identifier_handling: "subword"  # Options: subword, whole, char
+    
+  # Performance
+  performance:
+    use_fast: true  # Use Rust-based fast tokenizer if available
+    cache_dir: "./data/tokenizer_cache"
+    
+# Pre-built tokenizer options (for comparison/fallback)
+pretrained:
+  use_pretrained: false
+  model_name: "gpt2"  # Options: gpt2, codegen, starcoder
+  
+# Vocabulary analysis
+analysis:
+  # Generate vocabulary statistics
+  generate_stats: true
+  stats_output: "./logs/tokenizer_stats.json"
+  
+  # Analyze token distribution
+  analyze_distribution: true
+  
+  # Test tokenization
+  test_samples:
+    - "def hello_world():\n    print('Hello, World!')"
+    - "function fibonacci(n) { return n <= 1 ? n : fibonacci(n-1) + fibonacci(n-2); }"
+    - "SELECT * FROM users WHERE age > 18 ORDER BY name;"
+    - "The quick brown fox jumps over the lazy dog."

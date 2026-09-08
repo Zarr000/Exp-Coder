@@ -1,0 +1,61 @@
+# Docker ignore
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache
+.coverage
+htmlcov
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data (large files)
+data/raw/
+data/processed/
+*.parquet
+
+# Logs
+logs/
+*.log
+
+# Checkpoints (large files)
+checkpoints/
+*.pt
+*.pth
+*.bin
+
+# Models (large files)
+*.safetensors
+models/
+
+# Test outputs
+test_results/
+html_report/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# GitHub
+.github/

@@ -1,0 +1,97 @@
+# Expera Vision (400M parameters)
+# Vision-language model for image understanding
+
+model:
+  name: expera-vision
+  version: "1.0"
+  architecture: transformer
+
+  # Language model dimensions
+  vocab_size: 32000
+  embedding_dim: 1024
+  hidden_dim: 1536
+  num_layers: 20
+  num_heads: 16
+  head_dim: 64
+  intermediate_size: 3072
+
+  # Vision encoder dimensions
+  vision_embed_dim: 1024
+  vision_num_layers: 12
+  vision_patch_size: 14
+
+  # Image handling
+  image_size: 336
+  num_channels: 3
+
+  # Context and positioning
+  max_position_embeddings: 2048
+  max_image_tokens: 576
+
+  # Regularization
+  dropout: 0.1
+  attention_dropout: 0.1
+  hidden_dropout: 0.1
+
+  # Activation
+  hidden_act: silu
+
+tokenizer:
+  type: BPE
+  vocab_size: 32000
+  max_length: 2048
+
+training:
+  # Optimization
+  optimizer: adamw
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+
+  # Training
+  batch_size: 16
+  gradient_accumulation: 4
+  epochs: 3
+
+  # Mixed precision
+  precision: bf16
+
+  # Vision settings
+  image_augmentation: true
+  random_flip: true
+  random_crop: true
+  color_jitter: true
+
+inference:
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  quantize: q4
+
+quantization:
+  formats:
+    - fp16
+    - q4
+
+  sizes:
+    fp16: 800MB
+    q4: 200MB
+
+capabilities:
+  - image_understanding
+  - visual_qa
+  - ocr
+  - chart_understanding
+  - ui_detection
+
+constraints:
+  max_tokens: 2048
+  max_image_size: 336
+  supported_formats:
+    - png
+    - jpg
+    - webp
+    - gif
+
+hardware:
+  min_gpu_memory: 6GB
+  target_tokens_per_second: 30

@@ -1,0 +1,22 @@
+[
+  {"instruction": "How do I print hello world in Python?", "response": "Use the print() function: print('Hello, World!')"},
+  {"instruction": "What is a variable in programming?", "response": "A variable is a named container that stores data. You can think of it like a labeled box where you keep values."},
+  {"instruction": "How do I add two numbers in Python?", "response": "You can use the + operator: result = 5 + 3. This will store 8 in the variable result."},
+  {"instruction": "What is a function?", "response": "A function is a reusable block of code that performs a specific task. You define it once and can call it multiple times."},
+  {"instruction": "How do I create a list in Python?", "response": "Use square brackets: my_list = [1, 2, 3]. Lists can hold multiple items."},
+  {"instruction": "What is a loop used for?", "response": "A loop lets you repeat code multiple times. For example, iterating over each item in a list."},
+  {"instruction": "How do I check if a condition is true?", "response": "Use if statements: if x > 5: print('x is greater than 5')"},
+  {"instruction": "What is a string?", "response": "A string is text data enclosed in quotes: 'hello' or \"hello\". It's a sequence of characters."},
+  {"instruction": "How do I read user input?", "response": "Use input(): name = input('Enter your name: ') - this displays a prompt and waits for user typing."},
+  {"instruction": "What is a dictionary?", "response": "A dictionary stores key-value pairs: {'name': 'Alice', 'age': 25}. You access values by their keys."},
+  {"instruction": "How do I handle errors?", "response": "Use try/except blocks: try: code_that_might_fail() except: handle_the_error()"},
+  {"instruction": "What is a class in programming?", "response": "A class is a blueprint for creating objects. It defines properties and methods that objects of that type will have."},
+  {"instruction": "How do I import a module?", "response": "Use import: import math. Then use math.function_name() to call functions from it."},
+  {"instruction": "What is boolean data?", "response": "Boolean has two values: True or False. It's used for logical operations and conditions."},
+  {"instruction": "How do I convert types?", "response": "Use type conversion functions: int('5') converts string to integer, str(5) converts number to string."},
+  {"instruction": "What is index in a list?", "response": "Index is the position of an item in a list, starting from 0. First item is at index 0."},
+  {"instruction": "How do I slice a list?", "response": "Use list[start:end]: my_list[0:2] gets first two items. The end is exclusive."},
+  {"instruction": "What is None?", "response": "None represents the absence of a value. It's different from 0 or empty string."},
+  {"instruction": "How do I sort a list?", "response": "Use sorted() or list.sort(): sorted(my_list) returns a new sorted list."},
+  {"instruction": "What is a module?", "response": "A module is a file containing Python code that you can import. It helps organize code."}
+]

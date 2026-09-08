@@ -1,0 +1,107 @@
+# Expera AI Model Configuration
+# This file defines the architecture and hyperparameters for the Expera AI model
+
+model:
+  name: "expera-ai-base"
+  version: "0.1.0"
+  
+  # Core Architecture Parameters
+  architecture:
+    # Vocabulary and embedding dimensions
+    vocab_size: 50304  # Optimized for GPU efficiency (divisible by 64)
+    hidden_size: 768   # Also called d_model or embedding dimension
+    
+    # Transformer architecture
+    num_layers: 12     # Number of transformer blocks
+    num_heads: 12      # Number of attention heads (hidden_size must be divisible by num_heads)
+    head_dim: 64       # Dimension per attention head (hidden_size / num_heads)
+    
+    # Feedforward network
+    intermediate_size: 3072  # FFN hidden dimension (typically 4 * hidden_size)
+    
+    # Context and sequence
+    max_position_embeddings: 2048  # Maximum sequence length
+    
+    # Regularization
+    dropout: 0.1
+    attention_dropout: 0.1
+    hidden_dropout: 0.1
+    
+    # Layer normalization
+    layer_norm_eps: 1.0e-5
+    
+    # Activation function
+    activation: "gelu"  # Options: gelu, relu, swish, silu
+    
+  # Advanced Features (Expera AI Innovations)
+  advanced:
+    # Memory system
+    use_memory_bank: true
+    memory_bank_size: 1024
+    memory_retrieval_heads: 4
+    
+    # Reasoning module
+    use_reasoning_module: true
+    reasoning_steps: 3
+    
+    # Long-context mechanisms
+    use_sliding_window: false
+    sliding_window_size: 512
+    
+    # Rotary Position Embeddings (RoPE)
+    use_rope: true
+    rope_theta: 10000.0
+    
+    # Flash Attention (if available)
+    use_flash_attention: true
+    
+    # Grouped Query Attention (GQA)
+    use_gqa: false
+    num_key_value_heads: 12  # For GQA, typically num_heads // 2 or num_heads // 4
+    
+  # Initialization
+  initialization:
+    method: "normal"  # Options: normal, xavier, kaiming
+    std: 0.02
+    
+  # Precision
+  precision:
+    dtype: "float32"  # Options: float32, float16, bfloat16
+    use_mixed_precision: true
+
+# Model variants (for scaling experiments)
+variants:
+  tiny:
+    hidden_size: 256
+    num_layers: 4
+    num_heads: 4
+    intermediate_size: 1024
+    max_position_embeddings: 1024
+    
+  small:
+    hidden_size: 512
+    num_layers: 8
+    num_heads: 8
+    intermediate_size: 2048
+    max_position_embeddings: 2048
+    
+  base:
+    hidden_size: 768
+    num_layers: 12
+    num_heads: 12
+    intermediate_size: 3072
+    max_position_embeddings: 2048
+    
+  large:
+    hidden_size: 1024
+    num_layers: 24
+    num_heads: 16
+    intermediate_size: 4096
+    max_position_embeddings: 4096
+    
+  xlarge:
+    hidden_size: 1536
+    num_layers: 32
+    num_heads: 24
+    intermediate_size: 6144
+    max_position_embeddings: 8192

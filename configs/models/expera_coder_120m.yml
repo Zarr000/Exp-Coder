@@ -1,0 +1,73 @@
+# Expera Coder 120M Model Configuration
+# Lightweight model for fast inference and resource-constrained environments
+
+model:
+  name: expera-coder-120m
+  path: checkpoints/expera_coder_120m
+  tokenizer: tokenizer/expera-coder
+  type: causal-lm
+
+architecture:
+  model_type: gpt
+  vocab_size: 32000
+  hidden_size: 768
+  num_hidden_layers: 12
+  num_attention_heads: 12
+  intermediate_size: 3072
+  max_position_embeddings: 2048
+
+performance:
+  parameters: 120_000_000
+  parameters_estimated: 120M
+  size_mb: 256
+  precision: fp16
+  context_length: 2048
+
+inference:
+  max_batch_size: 8
+  max_tokens: 2048
+  default_tokens: 512
+  recommended_temperature: 0.7
+  recommended_top_p: 0.9
+  recommended_top_k: 40
+
+hardware:
+  min_gpu_memory_mb: 512
+  recommended_gpu_memory_mb: 1024
+  supports_quantization: true
+  quantizations:
+    - fp16
+    - q4
+    - q5
+    - q8
+  supports_cpu: true
+
+capabilities:
+  code_generation: true
+  chat: true
+  infill: true
+  completion: false
+  reasoning: false
+  long_context: false
+
+use_cases:
+  - Fast code completions
+  - Lightweight chat
+  - Infill operations
+  - Resource-constrained environments
+  - Development on laptops
+
+deployment:
+  local: true
+  vps: true
+  cloud: true
+  edge: true
+
+# Default inference parameters
+generate:
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 40
+  repeat_penalty: 1.1
+  presence_penalty: 0.0
+  frequency_penalty: 0.0

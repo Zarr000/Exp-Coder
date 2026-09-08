@@ -1,0 +1,124 @@
+# Expera 120M Model Configuration
+# Lightweight model for fast inference
+
+model:
+  name: expera-120m
+  version: "1.0"
+
+architecture:
+  # Model type
+  model_type: causal_lm
+  architecture: gpt
+
+  # Vocab
+  vocab_size: 32000
+  tie_word_embeddings: false
+
+  # Embeddings
+  embedding_dim: 768
+
+  # Encoder
+  num_layers: 12
+  num_heads: 12
+  kv_heads: 12  # MHA (no GQA)
+
+  # Feed-forward
+  hidden_dim: 3072  # 4 * embedding_dim
+
+  # Context
+  max_position_embeddings: 2048
+
+  # Normalization
+  rms_norm_eps: 1.0e-5
+  norm_first: false
+
+  # Activation
+  activation: gelu
+  activation_ratio: 0.0  # SiLU/GELU
+
+  # Dropout
+  attention_dropout: 0.0
+  hidden_dropout: 0.0
+
+  # Initialization
+  initializer_range: 0.02
+  resumable_init: true
+
+rope:
+  enabled: true
+  type: yarn  # rotary / yarn / alibi
+  scaling: 1.0
+  original_max_pos_embeddings: 2048
+
+attention:
+  type: flash  # flash / sdpa / eager
+  bias: false
+  alibi: false
+
+moe:
+  enabled: false
+  num_experts: 8
+  top_k: 2
+  routing: sinkhorn
+  normalize_routing_weights: true
+
+training:
+  # Optimizer
+  optimizer: adamw
+  learning_rate: 1.0e-4
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  eps: 1.0e-8
+
+  # Scheduler
+  scheduler: cosine
+  warmup_steps: 500
+  min_lr_ratio: 0.1
+
+  # Batch
+  batch_size: 512
+  gradient_accumulation: 1
+  max_seq_length: 2048
+
+  # Mixed precision
+  precision: bf16  # fp32 / fp16 / bf16
+
+  # Gradient clipping
+  clip_grad_value: 1.0
+
+inference:
+  batch_size: 8
+  max_tokens: 2048
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 40
+
+quantization:
+  bits: 16
+  method:.default  # default /awq / gptq
+
+hardware:
+  # Training
+  gpu_memory_min_gb: 2
+  gpu_memory_recommended_gb: 4
+
+  # Inference
+  inference_batch_size: 8
+  max_batch_size: 16
+
+  # CPU
+  supports_cpu: true
+  cpu_inference: true
+
+capabilities:
+  code_generation: true
+  chat: true
+  infill: true
+  completion: false
+  reasoning: false
+  long_context: false
+
+parameters: 120_000_000
+size_mb: 256
+size_reduced_mb: 128

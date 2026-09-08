@@ -1,0 +1,60 @@
+# StatefulSet for API server with GPU
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: expera-api
+  namespace: expera-ai
+spec:
+  serviceName: expera-api
+  replicas: 2
+  selector:
+    matchLabels:
+      app: expera-api
+  template:
+    metadata:
+      labels:
+        app: expera-api
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: api
+        image: experaai/api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MODEL_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: expera-config
+              key: MODEL_NAME
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: expera-secrets
+              key: API_KEY
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "1000m"
+            nvidia.com/gpu: "1"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            nvidia.com/gpu: "1"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+        - name: data-storage
+          mountPath: /data
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: model-cache-pvc
+      - name: data-storage
+        emptyDir: {}
