@@ -1,0 +1,47 @@
+{
+  "run_type": "intended_config_120m_seq1024_ga4",
+  "model_config": {
+    "vocab_size": 50304,
+    "hidden_size": 768,
+    "num_layers": 12,
+    "num_heads": 12,
+    "num_kv_heads": 12,
+    "head_dim": null,
+    "intermediate_size": 3072,
+    "max_position_embeddings": 2048,
+    "activation": "gelu",
+    "dropout": 0.1,
+    "attention_dropout": 0.1,
+    "use_rope": true,
+    "rope_theta": 10000.0,
+    "layer_norm_eps": 1e-05,
+    "padding_idx": null,
+    "std": 0.02
+  },
+  "measurement": {
+    "seq_len": 1024,
+    "batch": 1,
+    "tokens_per_step": 1024,
+    "init_sec": 1.8,
+    "forward_avg_sec": 2.8557,
+    "backward_avg_sec": 2.0818,
+    "optimizer_avg_sec": 0.3257,
+    "avg_step_sec": 5.2632,
+    "tokens_per_sec": 194.6,
+    "final_loss": 0.1381,
+    "ram_ws_mb": 5411.3,
+    "finite": true,
+    "cuda": false
+  },
+  "setup": {
+    "lr": 0.0007,
+    "seed": 0,
+    "steps": 15
+  },
+  "meta": {
+    "commit": "unknown",
+    "timestamp": "2026-09-08T20:54:05+00:00",
+    "torch_version": "2.12.1+cpu",
+    "python": "3.13.5"
+  }
+}

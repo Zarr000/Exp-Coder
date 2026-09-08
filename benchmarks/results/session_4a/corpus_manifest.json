@@ -1,0 +1,80 @@
+{
+  "session": "4a",
+  "sources": {
+    "repo": "Exp-Coder repository source/docs (src, scripts, tests, docs, configs, datasets, README)",
+    "synthetic_multilingual": "Session 3A synthetic code sample (benchmarks/data/code_sample)"
+  },
+  "snapshot_commit": null,
+  "preprocessing": {
+    "encoding": "utf-8 (strict; non-utf8 skipped as binary)",
+    "max_bytes_per_doc": 524288,
+    "duplicates": "exact sha256 dedup (kept first occurrence)",
+    "split": "deterministic per-language stride (every 10th sorted doc -> val)",
+    "document_separator": "tokenizer EOS id appended per document (CausalLMDataset add_eos=True)"
+  },
+  "exact_duplicates_removed": 9,
+  "documents_written": 292,
+  "train": {
+    "cpp": {
+      "docs": 3,
+      "chars": 4157,
+      "bytes": 4157
+    },
+    "go": {
+      "docs": 3,
+      "chars": 3694,
+      "bytes": 3694
+    },
+    "javascript": {
+      "docs": 3,
+      "chars": 3728,
+      "bytes": 3728
+    },
+    "json": {
+      "docs": 5,
+      "chars": 417277,
+      "bytes": 417289
+    },
+    "markdown": {
+      "docs": 16,
+      "chars": 56764,
+      "bytes": 57484
+    },
+    "python": {
+      "docs": 228,
+      "chars": 1438186,
+      "bytes": 1438348
+    },
+    "rust": {
+      "docs": 3,
+      "chars": 4598,
+      "bytes": 4598
+    },
+    "shell": {
+      "docs": 1,
+      "chars": 654,
+      "bytes": 654
+    },
+    "yaml": {
+      "docs": 4,
+      "chars": 2921,
+      "bytes": 2926
+    }
+  },
+  "val": {
+    "markdown": {
+      "docs": 1,
+      "chars": 3467,
+      "bytes": 3467
+    },
+    "python": {
+      "docs": 25,
+      "chars": 154845,
+      "bytes": 154868
+    }
+  },
+  "train_chars": 1931979,
+  "val_chars": 158312,
+  "train_docs": 266,
+  "val_docs": 26
+}
