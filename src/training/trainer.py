@@ -12,13 +12,15 @@ Provides:
 """
 
 import time
+import random
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Iterator
 from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast, GradScaler
+from torch.cuda.amp import GradScaler
 from torch.utils.data import DataLoader, IterableDataset
 
 from .loss import LanguageModelingLoss
@@ -65,6 +67,13 @@ class TrainerConfig:
     # Logging
     log_every: int = 100
     metrics_logger: Optional[Any] = None
+
+    # Extra metadata embedded verbatim into checkpoints (e.g. source YAML paths,
+    # model configuration). See CHECKPOINT_FORMAT.
+    checkpoint_meta: Optional[Dict[str, Any]] = None
+
+
+CHECKPOINT_FORMAT = "exp-coder-v1"
 
 
 class ExponentialMovingAverage:
@@ -141,9 +150,9 @@ class Trainer:
         # Loss function
         self.loss_fn = config.loss_fn or LanguageModelingLoss()
 
-        # AMP scaler
+        # AMP scaler (CUDA only; CPU runs fp32)
         self.scaler = None
-        if config.use_amp:
+        if config.use_amp and self.device.type == "cuda":
             self.scaler = GradScaler()
 
         # EMA
@@ -244,8 +253,8 @@ class Trainer:
         # Handle gradient accumulation
         accumulation_steps = self.config.gradient_accumulation_steps
 
-        # Forward pass
-        with autocast(enabled=self.config.use_amp, dtype=self.config.amp_dtype):
+        # Forward pass (mixed precision only on CUDA; CPU always fp32)
+        with self._amp_context():
             # Get inputs and labels
             if isinstance(batch, dict):
                 inputs = batch.get("input_ids", batch.get("inputs"))
@@ -325,6 +334,12 @@ class Trainer:
             "gpu_util": gpu_util,
         }
 
+    def _amp_context(self):
+        """Mixed-precision autocast on CUDA; no-op (fp32) on CPU."""
+        if self.config.use_amp and self.device.type == "cuda":
+            return torch.autocast(device_type="cuda", dtype=self.config.amp_dtype)
+        return nullcontext()
+
     def validate(self) -> Dict[str, float]:
         """Run validation."""
         self.model.eval()
@@ -348,7 +363,7 @@ class Trainer:
                     batch = [b.to(self.device) if torch.is_tensor(b) else b for b in batch]
 
                 # Forward
-                with autocast(enabled=self.config.use_amp, dtype=self.config.amp_dtype):
+                with self._amp_context():
                     if isinstance(batch, dict):
                         inputs = batch.get("input_ids", batch.get("inputs"))
                         labels = batch.get("labels", inputs)
@@ -379,7 +394,7 @@ class Trainer:
         }
 
     def save_checkpoint(self, path: str) -> None:
-        """Save checkpoint."""
+        """Save checkpoint (Exp-Coder format v1)."""
         if self.save_dir is None:
             return
 
@@ -387,10 +402,21 @@ class Trainer:
 
         # Build checkpoint dict
         checkpoint = {
+            "format": CHECKPOINT_FORMAT,
             "global_step": self.global_step,
             "epoch": self.epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "rng_state": {
+                "python": random.getstate(),
+                "torch": torch.get_rng_state(),
+                "cuda": (
+                    torch.cuda.get_rng_state_all()
+                    if torch.cuda.is_available()
+                    else None
+                ),
+            },
+            "config": self.config.checkpoint_meta or {},
         }
 
         if self.scheduler is not None:
@@ -409,7 +435,12 @@ class Trainer:
         self._cleanup_checkpoints()
 
     def load_checkpoint(self, path: str) -> None:
-        """Load checkpoint."""
+        """Load checkpoint produced by :meth:`save_checkpoint` (or a nearby
+        compatible dict containing at least the core keys).
+
+        Restores model, optimizer, scheduler, scaler, EMA and RNG state, so
+        training can resume.
+        """
         checkpoint_path = Path(path)
         if not checkpoint_path.is_absolute():
             checkpoint_path = self.save_dir / path
@@ -423,7 +454,8 @@ class Trainer:
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
         # Load optimizer
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if "optimizer_state_dict" in checkpoint:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         # Load scheduler
         if self.scheduler is not None and "scheduler_state_dict" in checkpoint:
@@ -437,7 +469,15 @@ class Trainer:
         if self.ema is not None and "ema_state_dict" in checkpoint:
             self.ema.shadow = checkpoint["ema_state_dict"]
 
-        self.global_step = checkpoint["global_step"]
+        # Restore RNG state
+        if "rng_state" in checkpoint:
+            rng = checkpoint["rng_state"]
+            random.setstate(rng["python"])
+            torch.set_rng_state(rng["torch"])
+            if rng.get("cuda") is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(rng["cuda"])
+
+        self.global_step = checkpoint.get("global_step", checkpoint.get("step", 0))
         self.epoch = checkpoint.get("epoch", 0)
 
     def _cleanup_checkpoints(self) -> None:

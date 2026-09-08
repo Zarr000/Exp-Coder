@@ -1,4 +1,15 @@
-"""Checkpoint management utilities for Expera AI."""
+"""
+DEPRECATED checkpoint management utilities.
+
+This module is legacy. The canonical Exp-Coder checkpoint format is
+``exp-coder-v1`` and lives in:
+    src/training/checkpoint_manager.py (CheckpointManager)
+and is also emitted by:
+    src/training/trainer.py (Trainer.save_checkpoint)
+
+Both write and read the same dict format. Keep this module only for
+backward compatibility with historical scripts; do not use it in new code.
+"""
 
 import os
 from typing import Dict, Any, Optional

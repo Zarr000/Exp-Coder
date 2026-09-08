@@ -1,42 +1,66 @@
 """
-Checkpoint management for Expera AI training.
+Exp-Coder checkpoint management — canonical format.
 
-Provides:
-- Periodic saving
-- Automatic cleanup
-- Resume from latest
-- Best model tracking
+Checkpoint format ``exp-coder-v1`` (single source of truth):
+
+    {
+        "format": "exp-coder-v1",
+        "step": int,
+        "epoch": int,
+        "metrics": {...},
+        "model_state_dict": ...,
+        "optimizer_state_dict": ...,
+        "scheduler_state_dict": ... (optional),
+        "scaler_state_dict": ... (optional),
+        "rng_state": {"python": ..., "torch": ..., "cuda": ...},
+        "config": {...},               # model/training config metadata
+        "tokenizer_metadata": {...},   # vocab size / special tokens
+    }
+
+``src.training.trainer.Trainer.save_checkpoint`` produces the same format, so
+checkpoints written here can be loaded by the Trainer (and vice versa) when
+the containing keys match.
+
+Features:
+- periodic saves with cleanup
+- resume from latest / best
+- task metadata embedded in the checkpoint
 """
 
 import json
+import random
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
 
 
+CHECKPOINT_FORMAT = "exp-coder-v1"
+
+
 @dataclass
 class CheckpointMetadata:
-    """Metadata for a checkpoint."""
+    """JSON-serializable metadata for a checkpoint."""
     step: int
     epoch: int
     timestamp: str
     metrics: Dict[str, float] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
+    format: str = CHECKPOINT_FORMAT
 
 
 class CheckpointManager:
     """
-    Manages checkpointing with automatic cleanup.
+    Manages checkpointing (directory-per-checkpoint, Exp-Coder v1 format).
 
     Features:
     - Periodic saving
     - Automatic cleanup of old checkpoints
-    - Resume from latest
-    - Best model tracking
+    - Resume from latest / best
+    - RNG + config + tokenizer metadata embedded for faithful resume
     """
 
     def __init__(
@@ -53,204 +77,177 @@ class CheckpointManager:
         self.save_dir = Path(save_dir)
         self.keep_last_n = keep_last_n
 
-        # Best model tracking
         self.best_metric = float("inf")
         self.best_checkpoint_path: Optional[Path] = None
 
-        # Create save directory
         if self.save_dir:
             self.save_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create metadata file
         self.metadata_file = self.save_dir / "metadata.json"
 
     def save(
         self,
         step: int,
         metrics: Dict[str, float],
+        epoch: int = 0,
         rank: int = 0,
+        config: Optional[Dict[str, Any]] = None,
+        tokenizer: Optional[Any] = None,
     ) -> str:
-        """
-        Save checkpoint.
+        """Save checkpoint in the canonical Exp-Coder v1 format.
 
         Args:
-            step: Current training step
-            metrics: Metrics to save
-            rank: Current process rank (for DDP)
-
-        Returns:
-            Path to saved checkpoint
+            step: current training step
+            metrics: metrics dict
+            epoch: current epoch
+            rank: process rank (only rank 0 writes with DDP)
+            config: model/training configuration (embedded in checkpoint)
+            tokenizer: tokenizer whose metadata is embedded
         """
-        # Build filename
         filename = f"checkpoint_step_{step}.pt"
         checkpoint_path = self.save_dir / filename
 
-        # Build checkpoint dict
+        tokenizer_meta: Dict[str, Any] = {}
+        if tokenizer is not None:
+            tokenizer_meta = {
+                "vocab_size": getattr(tokenizer, "vocab_size", None),
+                "actual_vocab_size": len(tokenizer) if hasattr(tokenizer, "__len__") else None,
+                "special_tokens": dict(getattr(tokenizer, "special_tokens", {}) or {}),
+            }
+
         checkpoint = {
+            "format": CHECKPOINT_FORMAT,
             "step": step,
+            "epoch": epoch,
             "metrics": metrics,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "rng_state": {
+                "python": random.getstate(),
+                "torch": torch.get_rng_state(),
+                "cuda": (
+                    torch.cuda.get_rng_state_all()
+                    if torch.cuda.is_available()
+                    else None
+                ),
+            },
+            "config": config or {},
+            "tokenizer_metadata": tokenizer_meta,
         }
 
         if self.scheduler is not None:
             checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
 
-        # Save checkpoint (only rank 0 in DDP)
         if rank == 0:
             torch.save(checkpoint, checkpoint_path)
 
-            # Update metadata
             metadata = CheckpointMetadata(
                 step=step,
-                epoch=0,
+                epoch=epoch,
                 timestamp=datetime.now().isoformat(),
                 metrics=metrics,
             )
             self._save_metadata(metadata)
 
-        # Update best checkpoint
         if "val_loss" in metrics and metrics["val_loss"] < self.best_metric:
             self.best_metric = metrics["val_loss"]
             self.best_checkpoint_path = checkpoint_path
             self._save_best_marker(step, metrics)
 
-        # Cleanup old checkpoints
         self.cleanup()
-
         return str(checkpoint_path)
 
     def load_latest(self) -> Optional[Dict[str, Any]]:
-        """
-        Load latest checkpoint.
-
-        Returns:
-            Checkpoint dict or None if not found
-        """
+        """Load most recent checkpoint (``None`` if none exists)."""
         if not self.save_dir.exists():
             return None
-
-        # Find latest checkpoint
         checkpoints = sorted(self.save_dir.glob("checkpoint_step_*.pt"))
         if not checkpoints:
             return None
-
-        latest = checkpoints[-1]
-        return self._load_checkpoint(latest)
+        return self._load_checkpoint(checkpoints[-1])
 
     def load_best(self) -> Optional[Dict[str, Any]]:
-        """
-        Load best checkpoint.
-
-        Returns:
-            Checkpoint dict or None if not found
-        """
-        if self.best_checkpoint_path is None or not self.best_checkpoint_path.exists():
-            # Try to find best marker
-            best_marker = self.save_dir / "best.txt"
-            if best_marker.exists():
-                with open(best_marker) as f:
-                    step = int(f.read().strip())
-                best_path = self.save_dir / f"checkpoint_step_{step}.pt"
-                if best_path.exists():
-                    return self._load_checkpoint(best_path)
-            return None
-
-        return self._load_checkpoint(self.best_checkpoint_path)
+        """Load best checkpoint by recorded metric."""
+        if self.best_checkpoint_path is not None and self.best_checkpoint_path.exists():
+            return self._load_checkpoint(self.best_checkpoint_path)
+        best_marker = self.save_dir / "best.txt"
+        if best_marker.exists():
+            step = int(best_marker.read_text().strip())
+            best_path = self.save_dir / f"checkpoint_step_{step}.pt"
+            if best_path.exists():
+                return self._load_checkpoint(best_path)
+        return None
 
     def load(self, path: str) -> Dict[str, Any]:
-        """
-        Load checkpoint from path.
-
-        Args:
-            path: Checkpoint path (relative or absolute)
-
-        Returns:
-            Checkpoint dict
-        """
+        """Load checkpoint from explicit path."""
         checkpoint_path = Path(path)
         if not checkpoint_path.is_absolute():
             checkpoint_path = self.save_dir / path
-
         return self._load_checkpoint(checkpoint_path)
 
+    def resume_from(self, checkpoint: Dict[str, Any]) -> None:
+        """Apply a loaded checkpoint to model/optimizer/scheduler + RNG."""
+        def _pop(key, required=False):
+            if key not in checkpoint:
+                if required:
+                    raise KeyError(f"checkpoint missing required key {key!r}")
+                return None
+            return checkpoint[key]
+
+        self.model.load_state_dict(_pop("model_state_dict", required=True))
+        opt_state = _pop("optimizer_state_dict")
+        if opt_state is not None:
+            self.optimizer.load_state_dict(opt_state)
+
+        if self.scheduler is not None:
+            sched_state = _pop("scheduler_state_dict")
+            if sched_state is not None:
+                self.scheduler.load_state_dict(sched_state)
+
+        rng = _pop("rng_state")
+        if rng is not None:
+            random.setstate(rng["python"])
+            torch.set_rng_state(rng["torch"])
+            if rng.get("cuda") is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(rng["cuda"])
+
     def cleanup(self) -> None:
-        """Remove old checkpoints."""
+        """Remove old checkpoints beyond ``keep_last_n``."""
         if self.keep_last_n <= 0:
             return
-
-        # List checkpoints
         checkpoints = sorted(self.save_dir.glob("checkpoint_step_*.pt"))
-
-        # Remove old checkpoints (keep best)
         if len(checkpoints) > self.keep_last_n:
             for ckpt in checkpoints[:-self.keep_last_n]:
-                # Don't remove best checkpoint
                 if self.best_checkpoint_path is None or ckpt != self.best_checkpoint_path:
                     ckpt.unlink()
 
     def get_latest_step(self) -> int:
-        """
-        Get latest checkpoint step.
-
-        Returns:
-            Step number or -1 if no checkpoints
-        """
+        """Return the latest checkpoint step (``-1`` if none)."""
         if not self.save_dir.exists():
             return -1
-
         checkpoints = sorted(self.save_dir.glob("checkpoint_step_*.pt"))
         if not checkpoints:
             return -1
-
-        # Extract step from filename
-        latest = checkpoints[-1]
-        step = int(latest.stem.split("_")[-1])
-        return step
+        return int(checkpoints[-1].stem.split("_")[-1])
 
     def list_checkpoints(self) -> List[Dict[str, Any]]:
-        """
-        List all checkpoints with metadata.
-
-        Returns:
-            List of checkpoint info
-        """
+        """List checkpoints with metadata."""
         if not self.save_dir.exists():
             return []
-
-        checkpoints = []
+        out = []
         for ckpt in sorted(self.save_dir.glob("checkpoint_step_*.pt")):
             step = int(ckpt.stem.split("_")[-1])
-            metrics = {}
-            tags = []
-
-            # Check if best
-            if self.best_checkpoint_path == ckpt:
-                tags.append("best")
-
-            checkpoints.append({
-                "path": str(ckpt),
-                "step": step,
-                "metrics": metrics,
-                "tags": tags,
-            })
-
-        return checkpoints
+            tags = ["best"] if self.best_checkpoint_path == ckpt else []
+            out.append({"path": str(ckpt), "step": step, "tags": tags})
+        return out
 
     def _load_checkpoint(self, path: Path) -> Dict[str, Any]:
-        """Load checkpoint from file."""
-        checkpoint = torch.load(path, map_location="cpu")
-        return checkpoint
+        return torch.load(path, map_location="cpu")
 
     def _save_metadata(self, metadata: CheckpointMetadata) -> None:
-        """Save checkpoint metadata."""
-        # Load existing metadata
         all_metadata: Dict[str, Any] = {}
         if self.metadata_file.exists():
-            with open(self.metadata_file) as f:
-                all_metadata = json.load(f)
-
-        # Add new metadata
+            all_metadata = json.loads(self.metadata_file.read_text())
         all_metadata[f"step_{metadata.step}"] = {
             "step": metadata.step,
             "epoch": metadata.epoch,
@@ -258,18 +255,8 @@ class CheckpointManager:
             "metrics": metadata.metrics,
             "tags": metadata.tags,
         }
-
-        # Save
-        with open(self.metadata_file, "w") as f:
-            json.dump(all_metadata, f, indent=2)
+        self.metadata_file.write_text(json.dumps(all_metadata, indent=2))
 
     def _save_best_marker(self, step: int, metrics: Dict[str, float]) -> None:
-        """Save best checkpoint marker."""
-        best_marker = self.save_dir / "best.txt"
-        with open(best_marker, "w") as f:
-            f.write(str(step))
-
-        # Save best metrics
-        best_metrics = self.save_dir / "best_metrics.json"
-        with open(best_metrics, "w") as f:
-            json.dump(metrics, f, indent=2)
+        (self.save_dir / "best.txt").write_text(str(step))
+        (self.save_dir / "best_metrics.json").write_text(json.dumps(metrics, indent=2))
